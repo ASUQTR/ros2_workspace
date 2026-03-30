@@ -1,5 +1,9 @@
 # ASUQTR ROS 2 Workspace
 
+<div align="center">
+  <img src="docs/sub.JPG" alt="Download MobaXterm" width="430"/>
+</div>
+
 Welcome to the core ROS 2 workspace for the ASUQTR submarine. This repository contains the entire software stack, including hardware drivers, control math (LQR), sensor fusion (EKF), and system-level launch configurations.
 
 To ensure consistency across the team and the physical robot, this project is fully containerized using Docker, with built-in support for the ASUQTR Web Dashboard via `rosbridge`.
@@ -21,7 +25,7 @@ Before running any scripts or containers on the physical submarine, you must log
 
 ### VS Code (Recommended)
 <a href="https://code.visualstudio.com/download" target="_blank">
-  <img src="docs/vs-code-logo.png" alt="Download MobaXterm" width="50"/>
+  <img src="docs/vs-code-logo.png" alt="Download VScode" width="50"/>
 </a>
 
 While you can write code in basic editors from MobaXterm,, the best developer experience is to attach Visual Studio Code directly to the running ROS 2 Docker container.
@@ -34,10 +38,14 @@ While you can write code in basic editors from MobaXterm,, the best developer ex
 You now have a full IDE and integrated terminals directly inside the ROS 2 environment!
 
 
-## 🛠️ 1. Setup Jetson Xavier
+## ⚙️ 1. Setup Jetson Xavier
 
 > [!WARNING]
-> Only run this on a freshly flashed Nvidia Jetson Xavier with __JetPack 5.1.6__. This step is not needed if you Xavier is already setup for ASUQTR ROS2 workspace
+> Only run this on a freshly flashed Jetson Xavier (via NVIDIA SDK Manager) with __JetPack 5.1.6__ . This step is not needed if you Xavier is already setup for ASUQTR ROS2 workspace.
+>
+> <a href="https://developer.nvidia.com/sdk-manager" target="_blank">
+>  <img src="docs/nvidia.png" alt="Download SDK manager" width="150"/>
+</a>
 
 1. SSH log into the Jetson Xavier.  [See these instructions](#-0-connecting-to-the-jetson-xavier-ssh)
 2. Clone this repo via SSH on the in the `$HOME` directory
@@ -101,8 +109,8 @@ Open a terminal inside the container (or use your attached VS Code terminal) and
 
 To test the control systems and monitor the sensor fusion, you will need multiple terminals running inside the Docker container. 
 
-### Step 1: Open Your Terminals
-Open 3 separate console windows in the `asuqtr_ros2` container (or split your VS Code terminal).
+### Step 1: Open Terminals
+Open 3 separate terminals in the `asuqtr_ros2` container (or split your VS Code terminal).
 
 ### Step 2: Launch the Submarine (Terminal 1)
 In your first terminal, launch the main system architecture. This brings up the control nodes, TF2 trees, `robot_localization`, hardware nodes and a lot of ther stuff.
