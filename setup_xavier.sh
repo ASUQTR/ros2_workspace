@@ -162,7 +162,7 @@ docker build -t asuqtr_ros2:latest .
 # Build ASUQTR Dashboard docker image
 sudo -u "$REAL_USER" git clone "https://gitea.asuqtr.com/SousMarinASUQTR/asuqtr_dashboard.git" "~/asuqtr_dashboard"
 cd ~/asuqtr_dashboard
-docker build -t docker-registry.asuqtr.com/asuqtr-dashboard:latest
+docker build -t asuqtr-dashboard:latest .
 
 # clone ASUQTR ROS2 vision workspace, to be mounted in ASUQTR vision container, which shall 
 # be downloaded by docker compose

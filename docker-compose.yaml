@@ -4,7 +4,7 @@ services:
   # ==========================================
   sub_control_core:
     # TODO add docker repository prefix to image when repository server available
-    image: asuqtr_ros2:v1.0
+    image: asuqtr_ros2:latest
     container_name: asuqtr_ros2
     runtime: nvidia
     privileged: true
