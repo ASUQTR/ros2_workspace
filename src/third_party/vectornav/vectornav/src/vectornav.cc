@@ -25,6 +25,7 @@
 // VectorNav libvncxx
 #include "vectornav.hpp"
 #include "vn/util.h"
+#include <tf2/LinearMath/Quaternion.h>
 
 using namespace std::chrono_literals;
 using namespace std::placeholders;
@@ -757,26 +758,30 @@ void Vectornav::AsyncPacketReceivedHandler(
 
   if (asyncPacket.groups() & vn::protocol::uart::BinaryGroup::BINARYGROUP_COMMON)
   {
-    if (cd.hasQuaternion()) 
-    {
-      vn::math::vec4f quat = cd.quaternion();
-      // Convert Native NED (North, East, Down) to ROS ENU (East, North, Up)
-      // VectorNav native indices: [0]=X/North, [1]=Y/East, [2]=Z/Down, [3]=W
-      imu_msg.orientation.x = quat[1];  // ROS X (East)  = Native Y
-      imu_msg.orientation.y = quat[0];  // ROS Y (North) = Native X
-      imu_msg.orientation.z = -quat[2]; // ROS Z (Up)    = Invert Native Z
-      imu_msg.orientation.w = quat[3];
-    }
-
-    if (cd.hasAngularRate()) 
-    {
-      vn::math::vec3f gyro = cd.angularRate();
-      // Convert Native FRD (Forward, Right, Down) to ROS FLU (Forward, Left, Up)
-      // VectorNav native indices: [0]=X/Forward, [1]=Y/Right, [2]=Z/Down
-      imu_msg.angular_velocity.x = gyro[0];  // ROS X (Forward) = Native X
-      imu_msg.angular_velocity.y = -gyro[1]; // ROS Y (Left)    = Invert Native Y
-      imu_msg.angular_velocity.z = -gyro[2]; // ROS Z (Up)      = Invert Native Z
-    }
+    vn::math::vec4f quat = cd.quaternion();
+    
+    // 1. Read Native VectorNav Quaternion (World NED -> Body FRD)
+    tf2::Quaternion q_orig(quat[0], quat[1], quat[2], quat[3]); 
+    
+    // 2. WORLD TRANSFORM: NED to ENU
+    // This rotates the world coordinates so Z points Up and X points East.
+    // (180 deg rotation around the X=Y diagonal)
+    tf2::Quaternion q_ned_to_enu(0.70710678, 0.70710678, 0.0, 0.0);
+    
+    // 3. BODY TRANSFORM: FLU to FRD
+    // This rotates the body coordinates so Z points Up and Y points Left.
+    // (180 deg rotation around the Forward X axis)
+    tf2::Quaternion q_flu_to_frd(1.0, 0.0, 0.0, 0.0);
+    
+    // 4. Apply the Double Transform
+    // ROS_Orientation = World_Transform * Sensor_Orientation * Body_Transform
+    tf2::Quaternion q_ros = q_ned_to_enu * q_orig * q_flu_to_frd;
+    
+    // 5. Output to the ROS standard message
+    imu_msg.orientation.x = q_ros.x();
+    imu_msg.orientation.y = q_ros.y();
+    imu_msg.orientation.z = q_ros.z();
+    imu_msg.orientation.w = q_ros.w();
   }
 
   if (asyncPacket.groups() & vn::protocol::uart::BinaryGroup::BINARYGROUP_ATTITUDE)
