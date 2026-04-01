@@ -52,6 +52,8 @@ class SensorNode(Node):
         # ---------------------------------------------------------
         self.get_logger().info('Initializing Bar30 sensor on I2C bus...')
         self.depth_sensor = MS5837_30BA(SENSOR_I2C_BUS)
+        if self.depth_sensor._bus is None:
+            raise IOError('Couldnt initialize I2C bus for BAR30 depth sensor!')
         self.depth_sensor.setFluidDensity(FLUID_DENSITY)
         
         max_retries = 3
