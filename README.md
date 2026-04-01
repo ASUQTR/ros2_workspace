@@ -10,11 +10,11 @@ Welcome to the core ROS 2 workspace for the ASUQTR submarine. This repository co
 ASUQTR's ROS2 software architecture contains 5 ROS2 packages, following a typical layered architecture patern :
 > [!TIP]
 > Click the sub package links to go to their README.md and get further details and specifications
-* [`sub_hardware`]()
-* [`sub_control`]()
-* [`sub_autonomy`]()
-* [`sub_interfaces`]()
-* [`sub_launch`]()
+* [`sub_hardware`](src/sub_hardware/)
+* [`sub_control`](src/sub_control/)
+* [`sub_autonomy`](src/sub_autonomy/)
+* [`sub_interfaces`](src/sub_interfaces/)
+* [`sub_launch`](src/sub_launch/)
 
 
 In the following architecture diagram, __BLACK__ icons are ASUQTR nodes/custom code, while __WHITE__ icons are standard ROS2 packages.
