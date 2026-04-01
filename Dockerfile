@@ -45,4 +45,13 @@ RUN echo "source /opt/ros/humble/install/setup.bash" >> ~/.bashrc
 RUN echo "source /opt/underlay_ws/install/setup.bash" >> ~/.bashrc
 RUN echo "source /workspace/install/setup.bash" >> ~/.bashrc
 
+# 7. Apply performance fix for control node's lqr math libraries.
+# This fix is applied here because its specific to the underlying BLAS libraries
+# used in this ros2 base container, which uses OpenBLAS instead of common BLAS when 
+# getting scripy from apt or pypi
+RUN echo "export OPENBLAS_NUM_THREADS=1" >> ~/.bashrc
+RUN echo "export OMP_NUM_THREADS=1" >> ~/.bashrc
+RUN echo "export MKL_NUM_THREADS=1" >> ~/.bashrc
+RUN echo "export NUMEXPR_NUM_THREADS=1" >> ~/.bashrc
+
 
