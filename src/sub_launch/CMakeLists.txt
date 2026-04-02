@@ -9,7 +9,6 @@ find_package(ament_cmake REQUIRED)
 # into the ROS 2 install space so the 'ros2 launch' command can find them.
 install(DIRECTORY
   launch
-  config
   urdf
   #rviz add later if rviz setup added
   DESTINATION share/${PROJECT_NAME}
