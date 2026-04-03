@@ -157,29 +157,36 @@ echo "Deploying Sub container infrastructure..."
 docker build -t asuqtr_ros2:latest .
 
 # Build ASUQTR Dashboard docker image
-sudo -u "$REAL_USER" git clone "https://github.com/ASUQTR/dashboard.git" "~/asuqtr_dashboard"
-cd ~/asuqtr_dashboard
+# 1. Define the target directory clearly
+USER_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+TARGET_DIR="$USER_HOME/asuqtr_dashboard"
+# 2. Clone using the full path (not the tilde ~)
+if [ -d "$TARGET_DIR" ]; then
+    echo "Directory exists, pulling latest changes..."
+    sudo -u "$REAL_USER" git -C "$TARGET_DIR" pull
+else
+    sudo -u "$REAL_USER" git clone "https://github.com/ASUQTR/dashboard.git" "$TARGET_DIR"
+fi
+# 3. Move into the directory
+cd "$TARGET_DIR"
+# 4. Build the image
 docker build -t asuqtr-dashboard:latest .
 
-# clone ASUQTR ROS2 vision workspace, to be mounted in ASUQTR vision container, which shall 
-# be downloaded by docker compose
-# HARDCODED, deterministic paths for the Sub
+# TODO fix that
+# clone ASUQTR ROS2 vision workspace...
 VISION_WS_DIR="/home/$REAL_USER/sub_vision_workspace"
-VISION_REPO_URL="https://github.com/YOUR_ORG/sub_vision_workspace.git" # <-- Update this URL
+VISION_REPO_URL="https://github.com/YOUR_ORG/asuqtr_vision_workspace.git" # <-- Update this URL
 echo "📂 Setting up the Vision Workspace at $VISION_WS_DIR..."
+echo "📂 NOT YET SUPPORTED..." #TODO remove
 
-if [ ! -d "$VISION_WS_DIR" ]; then
-    echo "📥 Cloning the Vision repository..."
-    # Execute as the normal user so they retain ownership and SSH keys work
-    sudo -u "$REAL_USER" git clone "$VISION_REPO_URL" "$VISION_WS_DIR"
-else
-    echo "✅ Vision workspace already exists. Pulling latest changes..."
-    sudo -u "$REAL_USER" bash -c "cd $VISION_WS_DIR && git pull"
-fi
+# 3. Spin up infrastructure
+echo "📦 Spinning up ASUQTR ROS2, ASUQTR dashboard and ASUQTR Vision..."
 
-# Docker Compose will automatically pull missing images from your registry
-echo "📦 Pulling images and spinning up ASUQTR ROS2, ASUQTR dashboard and ASUQTR Vision ..."
-docker compose -f "$SCRIPT_DIR/docker-compose.yaml" up -d
+# Optional but recommended: Stop and remove existing containers/networks for a truly fresh slate
+docker compose -f "$SCRIPT_DIR/docker-compose.yaml" down 
+
+# Spin up in detached mode and clean up any orphaned containers from previous setups
+docker compose -f "$SCRIPT_DIR/docker-compose.yaml" up -d --remove-orphans
 
 echo "=========================================="
 echo "🎉 Setup Complete!"
