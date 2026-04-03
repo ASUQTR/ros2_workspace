@@ -313,7 +313,6 @@ class ControlNode(Node):
         """
         Process incoming localization data, update state, and trigger the LQR solver.
         """
-        import time
         start_time = time.perf_counter()
 
         # ----------------------------------------------------------------------
