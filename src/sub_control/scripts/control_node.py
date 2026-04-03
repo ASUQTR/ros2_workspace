@@ -33,7 +33,7 @@ from rcl_interfaces.msg import SetParametersResult
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
 
 # Messages and TF2
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Pose
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Joy
 from sub_interfaces.msg import ThrusterCommand
@@ -158,6 +158,10 @@ class ControlNode(Node):
         
         self.thruster_pub = self.create_publisher(
             ThrusterCommand, 'thruster_cmd', only_latest_qos
+        )
+
+        self.lqr_error_pub = self.create_publisher(
+            Pose, 'lqr_error', only_latest_qos
         )
 
         # --- Action Server ---
@@ -384,6 +388,18 @@ class ControlNode(Node):
             # Pack and fire to the hardware node
             thrust_msg = ThrusterCommand(efforts=thrusters_force.tolist())
             self.thruster_pub.publish(thrust_msg)
+            
+            # publish error if in tuning mode, to help debugging/monitoring
+            if self._current_mode == ControlMode.LQR_TUNING:
+                lqr_error_msg = Pose()
+                lqr_error_msg.position.x = lqr_error[0]
+                lqr_error_msg.position.y = lqr_error[1]
+                lqr_error_msg.position.z = lqr_error[2]
+                lqr_error_msg.orientation.x = math.degrees(lqr_error[3])
+                lqr_error_msg.orientation.y = math.degrees(lqr_error[4])
+                lqr_error_msg.orientation.z = math.degrees(lqr_error[5])
+                self.lqr_error_pub.publish(lqr_error_msg)
+
     	# Stop the stopwatch and calculate duration in milliseconds
         end_time = time.perf_counter()
         exec_time_ms = (end_time - start_time) * 1000.0
