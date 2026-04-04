@@ -313,13 +313,13 @@ class ControlNode(Node):
         """
         Process incoming localization data, update state, and trigger the LQR solver.
         """
+        import time
         start_time = time.perf_counter()
 
         # ----------------------------------------------------------------------
         # ORIENTATION (Quaternion Sandwich Math)
         # ----------------------------------------------------------------------
         # Load ROS orientation (FLU w.r.t ENU) into SciPy Rotation object
-        # Note: SciPy strictly expects quaternions in [x, y, z, w] order
         quat_ros = [
             msg.pose.pose.orientation.x,
             msg.pose.pose.orientation.y,
@@ -331,9 +331,12 @@ class ControlNode(Node):
         # Apply the frame transformations: R_ned_frd = M_ned_enu * R_enu_flu * M_frd_flu
         R_ned_frd_mat = self.M_ned_enu @ R_enu_flu @ self.M_frd_flu
 
+        # OPTIMIZATION: Instantiate the SciPy Rotation object ONCE here as a local variable.
+        # We will use this to extract state now, and to calculate error later.
+        R_current = R.from_matrix(R_ned_frd_mat)
+
         # Extract intrinsic Z-Y-X Euler angles from the correctly oriented matrix
-        # 'zyx' corresponds to Yaw, Pitch, Roll. It handles bounds safely.
-        yaw_ned, pitch_ned, roll_ned = R.from_matrix(R_ned_frd_mat).as_euler('zyx', degrees=False)
+        yaw_ned, pitch_ned, roll_ned = R_current.as_euler('zyx', degrees=False)
 
         # ----------------------------------------------------------------------
         # POSITION & VELOCITY (Vector Projection)
@@ -373,11 +376,24 @@ class ControlNode(Node):
         # --- Execute Control ---
         if self._current_mode in [ControlMode.BEHAVIOR, ControlMode.LQR_TUNING]:
             
-            # Native vectorized math to calculate the error
+            # 1. Calculate linear errors directly (Position and Velocity are fine to subtract)
             lqr_error = target_state_copy - self.current_state
             
-            # Crucial: Wrap Roll/Pitch/Yaw errors so the sub doesn't aggressively spin 360 degrees
-            lqr_error[3:6] = self.wrap_angles_to_pi(lqr_error[3:6])
+            # 2. Reconstruct ONLY the Target Rotation object from the Euler arrays
+            # Since the target only exists as Euler angles in the array, we must build it here.
+            R_targ = R.from_euler('zyx', [target_state_copy[5], target_state_copy[4], target_state_copy[3]])
+            
+            # 3. Calculate shortest-path relative rotation matrix
+            # We reuse the exact R_current object instantiated at the top of the callback!
+            R_err = R_current.inv() * R_targ
+            
+            # 4. Extract the true error angles safely. 
+            err_yaw, err_pitch, err_roll = R_err.as_euler('zyx')
+            
+            # 5. Overwrite the angle errors in the lqr_error array
+            lqr_error[3] = err_roll
+            lqr_error[4] = err_pitch
+            lqr_error[5] = err_yaw
             
             # Fire the mathematical solver
             thrusters_force = self.lqr_solver.compute_thrust_force(
