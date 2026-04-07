@@ -21,7 +21,7 @@ from scipy.spatial.transform import Rotation as R
 
 # ==========================================
 # ROS 2 IMPORTS
-# ==========================================
+# ========================================
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer
@@ -338,21 +338,34 @@ class ControlNode(Node):
         # Extract intrinsic Z-Y-X Euler angles from the correctly oriented matrix
         yaw_ned, pitch_ned, roll_ned = R_current.as_euler('zyx', degrees=False)
 
-        yaw_offset_deg = 58.3   # temporaire, mesuré avec la boussole
+        # Temporary yaw offset to match current field convention
+        yaw_offset_deg = 58.3
         yaw_offset_rad = math.radians(yaw_offset_deg)
-
         yaw_ned_corrected = yaw_ned - yaw_offset_rad
         yaw_ned_corrected = (yaw_ned_corrected + math.pi) % (2 * math.pi) - math.pi
 
 
         # ----------------------------------------------------------------------
-        # POSITION & VELOCITY (Vector Projection)
+        # POSITION & VELOCITIES
         # ----------------------------------------------------------------------
-        pos_enu = np.array([msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z])
-        vel_lin_flu = np.array([msg.twist.twist.linear.x, msg.twist.twist.linear.y, msg.twist.twist.linear.z])
-        vel_ang_flu = np.array([msg.twist.twist.angular.x, msg.twist.twist.angular.y, msg.twist.twist.angular.z])
+        pos_enu = np.array([
+            msg.pose.pose.position.x,
+            msg.pose.pose.position.y,
+            msg.pose.pose.position.z
+        ], dtype=np.float64)
 
-        # Project vectors into target frames using the static matrices
+        vel_lin_flu = np.array([
+            msg.twist.twist.linear.x,
+            msg.twist.twist.linear.y,
+            msg.twist.twist.linear.z
+        ], dtype=np.float64)
+
+        vel_ang_flu = np.array([
+            msg.twist.twist.angular.x,
+            msg.twist.twist.angular.y,
+            msg.twist.twist.angular.z
+        ], dtype=np.float64)
+
         pos_ned = self.M_ned_enu @ pos_enu
         vel_lin_frd = self.M_frd_flu @ vel_lin_flu
         vel_ang_frd = self.M_frd_flu @ vel_ang_flu
@@ -384,7 +397,7 @@ class ControlNode(Node):
         if self._current_mode in [ControlMode.BEHAVIOR, ControlMode.LQR_TUNING]:
             
             # 1. Calculate linear errors directly (Position and Velocity are fine to subtract)
-            lqr_error = target_state_copy - self.current_state
+            lqr_error = self.current_state - target_state_copy 
             
             # 2. Reconstruct ONLY the Target Rotation object from the Euler arrays
             # Since the target only exists as Euler angles in the array, we must build it here.
@@ -554,24 +567,34 @@ class ControlNode(Node):
                 incoming_pose, self.global_reference_frame, timeout=Duration(seconds=1.0)
             )
             
-            target_roll_enu, target_pitch_enu, target_yaw_enu = self.quaternion_to_euler(
-                target_pose_in_map.pose.orientation.x, target_pose_in_map.pose.orientation.y,
-                target_pose_in_map.pose.orientation.z, target_pose_in_map.pose.orientation.w
-            )
+            quat_ros = [
+                target_pose_in_map.pose.orientation.x,
+                target_pose_in_map.pose.orientation.y,
+                target_pose_in_map.pose.orientation.z,
+                target_pose_in_map.pose.orientation.w
+            ]
             
-            yaw_ned = (math.pi / 2.0) - target_yaw_enu
+            R_enu_flu = R.from_quat(quat_ros).as_matrix()
+            R_ned_frd_mat = self.M_ned_enu @ R_enu_flu @ self.M_frd_flu
+            R_target = R.from_matrix(R_ned_frd_mat)
 
-            # Write the new objective to the shared memory space
+            yaw_ned, pitch_ned, roll_ned = R_target.as_euler('zyx', degrees=False)
+
+            yaw_offset_deg = 58.3
+            yaw_offset_rad = math.radians(yaw_offset_deg)
+            yaw_ned = yaw_ned - yaw_offset_rad
+            yaw_ned = (yaw_ned + math.pi) % (2 * math.pi) - math.pi
+
             with self.target_state_lock:
                 if not np.isnan(self.target_state[0]):
-                    # Apply Target ENU -> NED in-place
                     self.target_state[0] = target_pose_in_map.pose.position.y
                     self.target_state[1] = target_pose_in_map.pose.position.x
                     self.target_state[2] = -target_pose_in_map.pose.position.z
-                    self.target_state[3] = target_roll_enu
-                    self.target_state[4] = -target_pitch_enu
-                    self.target_state[5] = (yaw_ned + math.pi) % (2 * math.pi) - math.pi
-            
+
+                    self.target_state[3] = roll_ned
+                    self.target_state[4] = pitch_ned
+                    self.target_state[5] = yaw_ned
+
         except tf2_ros.TransformException as ex:
             self.get_logger().error(f'TF Error: {ex}')
             goal_handle.abort()
@@ -615,7 +638,7 @@ class ControlNode(Node):
             target_np = self.target_state.copy()
             
         # Fast array math to get absolute error magnitudes
-        lqr_error = target_np - self.current_state
+        lqr_error = self.current_state - target_np
         lqr_error[3:6] = self.wrap_angles_to_pi(lqr_error[3:6])
         
         position_errors = lqr_error[0:3] 

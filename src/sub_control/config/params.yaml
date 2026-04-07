@@ -14,7 +14,8 @@ control_node:
     
     # R MATRIX (Thruster Cost): Penalizes using thruster energy. 
     #  Higher R = "Save battery, thrust is expensive." This lowers overall output force.
-    thruster_cost_matrix: [0.01, 0.01, 0.04, 0.04, 0.04, 0.04, 0.01, 0.01]
+    thruster_cost_matrix: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    #thruster_cost_matrix: [0.01, 0.01, 0.04, 0.04, 0.04, 0.04, 0.01, 0.01]
 
     # Determines the minimum % at which joystick are detected.
     # 0.1 means 10% of the joystick will be ignored
