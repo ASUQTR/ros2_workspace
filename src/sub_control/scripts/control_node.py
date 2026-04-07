@@ -338,6 +338,13 @@ class ControlNode(Node):
         # Extract intrinsic Z-Y-X Euler angles from the correctly oriented matrix
         yaw_ned, pitch_ned, roll_ned = R_current.as_euler('zyx', degrees=False)
 
+        yaw_offset_deg = 58.3   # temporaire, mesuré avec la boussole
+        yaw_offset_rad = math.radians(yaw_offset_deg)
+
+        yaw_ned_corrected = yaw_ned - yaw_offset_rad
+        yaw_ned_corrected = (yaw_ned_corrected + math.pi) % (2 * math.pi) - math.pi
+
+
         # ----------------------------------------------------------------------
         # POSITION & VELOCITY (Vector Projection)
         # ----------------------------------------------------------------------
@@ -356,7 +363,7 @@ class ControlNode(Node):
         self.current_state[0:3] = pos_ned
         self.current_state[3]   = roll_ned
         self.current_state[4]   = pitch_ned
-        self.current_state[5]   = yaw_ned
+        self.current_state[5]   = yaw_ned_corrected
         self.current_state[6:9] = vel_lin_frd
         self.current_state[9:12] = vel_ang_frd
 
@@ -381,13 +388,17 @@ class ControlNode(Node):
             
             # 2. Reconstruct ONLY the Target Rotation object from the Euler arrays
             # Since the target only exists as Euler angles in the array, we must build it here.
+            #R_targ = R.from_euler('zyx', [target_state_copy[5], target_state_copy[4], target_state_copy[3]])
+            R_curr_ctrl = R.from_euler('zyx', [self.current_state[5], self.current_state[4], self.current_state[3]])
             R_targ = R.from_euler('zyx', [target_state_copy[5], target_state_copy[4], target_state_copy[3]])
             
             # 3. Calculate shortest-path relative rotation matrix
             # We reuse the exact R_current object instantiated at the top of the callback!
-            R_err = R_current.inv() * R_targ
+            #R_err = R_current.inv() * R_targ
+            R_err = R_curr_ctrl.inv() * R_targ
             
             # 4. Extract the true error angles safely. 
+            #err_yaw, err_pitch, err_roll = R_err.as_euler('zyx')
             err_yaw, err_pitch, err_roll = R_err.as_euler('zyx')
             
             # 5. Overwrite the angle errors in the lqr_error array
