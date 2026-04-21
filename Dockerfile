@@ -26,6 +26,8 @@ RUN echo "deb [signed-by=/etc/apt/keyrings/ros-archive-keyring.gpg] http://packa
 # Installer ROS 2 + outils dev
 RUN apt update && apt install -y \
     ros-humble-desktop \
+    ros-humble-robot-localization \
+    ros-humble-rosbridge-server \
     python3-colcon-common-extensions \
     python3-rosdep \
     python3-vcstool \
