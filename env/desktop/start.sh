@@ -22,4 +22,5 @@ docker run -it --rm \
   --group-add dialout \
   --net=host \
   -v $(pwd)/workspace:/workspace \
+  --name ros2-desktop \
   ros2-humble
