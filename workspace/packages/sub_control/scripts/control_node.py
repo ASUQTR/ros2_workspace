@@ -35,6 +35,7 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Joy
+from std_msgs.msg import Float64MultiArray
 from sub_interfaces.msg import ThrusterCommand
 from sub_interfaces.action import Control
 import tf2_ros
@@ -42,13 +43,14 @@ import tf2_ros
 # ==========================================
 # ASUQTR IMPORTS
 # ==========================================
-from sub_control.lqr_solver import SubLQRSolver, THRUST_ALLOC_MAT
+from sub_control.lqr_solver import SubLQRSolver, THRUST_ALLOC_MAT, Bm
 
 # Default cost matrix parameter values for LQR controller
 # Q: State error penalties (Position/Angle springs and Velocity dampers)
-DEFAULT_Q = [0.5, 0.5, 0.5, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+DEFAULT_Q = [4*1052.4762, 4*578.7808, 4*670.0731, 4*3134.6757, 4*3959.9523, 20*1453.9726, 4*265.1124, 4*303.5306, 4*204.2912, 4*12.3207, 4*19.8116, 20*6.2442]
 # R: Thruster energy penalties (Higher = less aggressive thrust)
-DEFAULT_R = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+DEFAULT_R = [10.0, 10.0, 1000.0, 1000.0, 1000.0, 1000.0, 10.0, 10.0]
+DEFAULT_MAX_THRUSTER_FORCE = 40.0
 DEFAULT_MAX_THROTTLE = 0.8
 DEFAULT_JOY_DEAD_ZONE = 0.1
 
@@ -95,6 +97,13 @@ class ControlNode(Node):
         self.declare_parameter('control_mode', 'behavior')
         self.declare_parameter('state_cost_matrix', DEFAULT_Q)
         self.declare_parameter('thruster_cost_matrix', DEFAULT_R)
+        self.declare_parameter('publish_lqr_debug_angles', True)
+        self.declare_parameter('publish_lqr_dynamics_debug', True)
+        self.declare_parameter('debug_invert_roll', False)
+        self.declare_parameter('debug_invert_pitch', False)
+        self.declare_parameter('debug_invert_yaw', False)
+        self.declare_parameter('damping_sign', 1.0)
+        self.declare_parameter('max_thruster_force_newton', DEFAULT_MAX_THRUSTER_FORCE)
 
         # PERFORMANCE ARCHITECTURE: Pre-allocate State Arrays
         # Initializing with NaN ensures the LQR math functions won't 
@@ -107,12 +116,30 @@ class ControlNode(Node):
         self._set_mode_from_string(mode_str)
         self.update_q_matrix(self.get_parameter('state_cost_matrix').value)
         self.update_r_matrix(self.get_parameter('thruster_cost_matrix').value)
+        self.publish_lqr_debug_angles = bool(self.get_parameter('publish_lqr_debug_angles').value)
+        self.publish_lqr_dynamics_debug = bool(self.get_parameter('publish_lqr_dynamics_debug').value)
+        self.debug_invert_roll = bool(self.get_parameter('debug_invert_roll').value)
+        self.debug_invert_pitch = bool(self.get_parameter('debug_invert_pitch').value)
+        self.debug_invert_yaw = bool(self.get_parameter('debug_invert_yaw').value)
+        self.damping_sign = float(self.get_parameter('damping_sign').value)
+        self.max_thruster_force_newton = float(self.get_parameter('max_thruster_force_newton').value)
         
         # Bind dynamic reconfigure callback
         self.add_on_set_parameters_callback(self.parameter_callback)
 
         # --- Instantiate Mathematical Engine ---
         self.lqr_solver = SubLQRSolver()
+        if self.damping_sign not in (-1.0, 1.0):
+            self.get_logger().warn(
+                f"Invalid damping_sign={self.damping_sign}. Using default +1.0. Allowed values are -1.0 or 1.0."
+            )
+            self.damping_sign = 1.0
+        if self.max_thruster_force_newton <= 0.0:
+            self.get_logger().warn(
+                f"Invalid max_thruster_force_newton={self.max_thruster_force_newton}. Using default {DEFAULT_MAX_THRUSTER_FORCE}."
+            )
+            self.max_thruster_force_newton = DEFAULT_MAX_THRUSTER_FORCE
+        self.lqr_solver.set_damping_sign(self.damping_sign)
         
         # --- Thread Safety & State ---
         # The Action Server thread can update the target_state at the exact 
@@ -158,6 +185,18 @@ class ControlNode(Node):
         self.thruster_pub = self.create_publisher(
             ThrusterCommand, 'thruster_cmd', only_latest_qos
         )
+        self.lqr_debug_pub = self.create_publisher(
+            Float64MultiArray, 'debug/lqr_angles', only_latest_qos
+        )
+        self.lqr_velocity_pub = self.create_publisher(
+            Float64MultiArray, 'debug/lqr_velocity', only_latest_qos
+        )
+        self.lqr_accel_cmd_pub = self.create_publisher(
+            Float64MultiArray, 'debug/lqr_accel_cmd', only_latest_qos
+        )
+        self.lqr_dynamics_pub = self.create_publisher(
+            Float64MultiArray, 'debug/lqr_dynamics', only_latest_qos
+        )
 
         # --- Action Server ---
         self._action_server = ActionServer(
@@ -167,6 +206,13 @@ class ControlNode(Node):
 
         self.last_mode_switch_button_state = False
         self.get_logger().info("Sub Control Node Initialized.")
+        self.get_logger().info(
+            f"LQR debug angles pub: {self.publish_lqr_debug_angles} | "
+            f"LQR dynamics debug pub: {self.publish_lqr_dynamics_debug} | "
+            f"invert R/P/Y: {self.debug_invert_roll}/{self.debug_invert_pitch}/{self.debug_invert_yaw} | "
+                        f"damping_sign: {self.damping_sign} | "
+                        f"max_thruster_force_newton: {self.max_thruster_force_newton}"
+        )
 
 
     # ==========================================
@@ -198,6 +244,38 @@ class ControlNode(Node):
                     return SetParametersResult(successful=True)
                 else:
                     return SetParametersResult(successful=False, reason='Invalid R matrix')
+            elif param.name == 'publish_lqr_debug_angles':
+                self.publish_lqr_debug_angles = bool(param.value)
+                return SetParametersResult(successful=True)
+            elif param.name == 'publish_lqr_dynamics_debug':
+                self.publish_lqr_dynamics_debug = bool(param.value)
+                return SetParametersResult(successful=True)
+            elif param.name == 'debug_invert_roll':
+                self.debug_invert_roll = bool(param.value)
+                return SetParametersResult(successful=True)
+            elif param.name == 'debug_invert_pitch':
+                self.debug_invert_pitch = bool(param.value)
+                return SetParametersResult(successful=True)
+            elif param.name == 'debug_invert_yaw':
+                self.debug_invert_yaw = bool(param.value)
+                return SetParametersResult(successful=True)
+            elif param.name == 'damping_sign':
+                if param.type_ != Parameter.Type.DOUBLE:
+                    return SetParametersResult(successful=False, reason='damping_sign must be a float (double)')
+                if float(param.value) not in (-1.0, 1.0):
+                    return SetParametersResult(successful=False, reason='damping_sign must be either -1.0 or 1.0')
+                self.damping_sign = float(param.value)
+                self.lqr_solver.set_damping_sign(self.damping_sign)
+                self.get_logger().info(f"Damping sign set to: {self.damping_sign}")
+                return SetParametersResult(successful=True)
+            elif param.name == 'max_thruster_force_newton':
+                if param.type_ != Parameter.Type.DOUBLE:
+                    return SetParametersResult(successful=False, reason='max_thruster_force_newton must be a float (double)')
+                if float(param.value) <= 0.0:
+                    return SetParametersResult(successful=False, reason='max_thruster_force_newton must be > 0.0')
+                self.max_thruster_force_newton = float(param.value)
+                self.get_logger().info(f"Max thruster force set to: +/-{self.max_thruster_force_newton} N")
+                return SetParametersResult(successful=True)
 
         # TODO handle multi params. Right now first handled param returns from this callback
         return SetParametersResult(successful=False, reason=f'Unhandled parameters :{params}')
@@ -326,6 +404,15 @@ class ControlNode(Node):
         yaw_ned = (math.pi / 2.0) - yaw_flu
         self.current_state[5] = (yaw_ned + math.pi) % (2 * math.pi) - math.pi
 
+        # Runtime diagnostics: optional sign flips to isolate axis convention issues
+        if self.debug_invert_roll:
+            self.current_state[3] = -self.current_state[3]
+        if self.debug_invert_pitch:
+            self.current_state[4] = -self.current_state[4]
+        if self.debug_invert_yaw:
+            self.current_state[5] = -self.current_state[5]
+            self.current_state[5] = (self.current_state[5] + math.pi) % (2 * math.pi) - math.pi
+
         # Body Frame: FLU -> FRD (Velocities)
         self.current_state[6] = msg.twist.twist.linear.x
         self.current_state[7] = -msg.twist.twist.linear.y    # Left to Right
@@ -333,6 +420,14 @@ class ControlNode(Node):
         self.current_state[9] = msg.twist.twist.angular.x
         self.current_state[10] = -msg.twist.twist.angular.y  # Pitch to -Pitch
         self.current_state[11] = -msg.twist.twist.angular.z  # Yaw to -Yaw
+
+        if self.publish_lqr_debug_angles:
+            dbg = Float64MultiArray()
+            dbg.data = [
+                roll_flu, pitch_flu, yaw_flu,
+                self.current_state[3], self.current_state[4], self.current_state[5]
+            ]
+            self.lqr_debug_pub.publish(dbg)
         
         # --- Target State Management ---
         with self.target_state_lock:
@@ -360,6 +455,42 @@ class ControlNode(Node):
             thrusters_force = self.lqr_solver.compute_thrust_force(
                 self.current_state, lqr_error, self.q_matrix, self.r_matrix, self.inv_r_matrix
             )
+
+            # Enforce physical actuator limits in software (per thruster, Newtons).
+            thrusters_force = np.clip(
+                thrusters_force,
+                -self.max_thruster_force_newton,
+                self.max_thruster_force_newton
+            )
+
+            if self.publish_lqr_dynamics_debug:
+                # Predicted accelerations from current thruster command in NED/FRD dynamics.
+                accel_cmd = Bm[6:12, :].dot(thrusters_force)
+
+                vel_msg = Float64MultiArray()
+                # Order: [u, v, w, p, q, r]
+                vel_msg.data = [
+                    self.current_state[6], self.current_state[7], self.current_state[8],
+                    self.current_state[9], self.current_state[10], self.current_state[11]
+                ]
+                self.lqr_velocity_pub.publish(vel_msg)
+
+                accel_msg = Float64MultiArray()
+                # Order: [u_dot, v_dot, w_dot, p_dot, q_dot, r_dot]
+                accel_msg.data = [
+                    accel_cmd[0], accel_cmd[1], accel_cmd[2],
+                    accel_cmd[3], accel_cmd[4], accel_cmd[5]
+                ]
+                self.lqr_accel_cmd_pub.publish(accel_msg)
+
+                dyn_msg = Float64MultiArray()
+                dyn_msg.data = [
+                    self.current_state[6], self.current_state[7], self.current_state[8],
+                    self.current_state[9], self.current_state[10], self.current_state[11],
+                    accel_cmd[0], accel_cmd[1], accel_cmd[2],
+                    accel_cmd[3], accel_cmd[4], accel_cmd[5]
+                ]
+                self.lqr_dynamics_pub.publish(dyn_msg)
             
             # Pack and fire to the hardware node
             thrust_msg = ThrusterCommand(efforts=thrusters_force.tolist())
