@@ -8,7 +8,19 @@ Pour générer l'image, exécutez le scipt `setup.sh`. Il va s'assurer que les d
 
 Une fois l'image générée, exécutez le script `start.sh` pour démarrer le conteneur. Vous entrerez dans le terminal du conteneur et le volume du workspace sera automatiquement monté.
 
+## Multiplier les possibilités avec plusieurs terminaux
 Pour ouvrir un autre terminal indépendant :
 ```bash
 docker exec -it ros2-desktop /bin/bash
+```
+
+Dans le terminal du Docker entrer la commande suivante: 
+```bash
+source /opt/ros/humble/setup.bash
+
+source /opt/underlay_ws/install/setup.bash
+
+if [ -f "/workspace/install/setup.bash" ]; then
+    source /workspace/install/setup.bash
+fi
 ```
