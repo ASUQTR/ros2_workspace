@@ -30,41 +30,41 @@ launch:
         - from: "$(find-pkg-share sub_control)/config/robot_localization.yaml"
 
 
-  # 2. Sub Hardware (Actuators & Sensors)
-  - node:
-      pkg: "sub_hardware"
-      exec: "actuator_node.py"
-      name: "actuator_node"
-      param:
-        - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
+  # 2. Sub Hardware (Actuators & Sensors) - COMMENTED OUT FOR SIMULATION
+  # - node:
+  #     pkg: "sub_hardware"
+  #     exec: "actuator_node.py"
+  #     name: "actuator_node"
+  #     param:
+  #       - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
 
-  - node:
-      pkg: "sub_hardware"
-      exec: "sensor_node.py"
-      name: "sensor_node"
-      param:
-        - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
+  # - node:
+  #     pkg: "sub_hardware"
+  #     exec: "sensor_node.py"
+  #     name: "sensor_node"
+  #     param:
+  #       - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
   
-  - node:
-      pkg: "sub_hardware"
-      exec: "gpio_node.py"
-      name: "gpio_node"
-      param:
-        - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
+  # - node:
+  #     pkg: "sub_hardware"
+  #     exec: "gpio_node.py"
+  #     name: "gpio_node"
+  #     param:
+  #       - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
 
-  - node:
-      pkg: "sub_hardware"
-      exec: "dvl_node.py"
-      name: "dvl_node"
-      param:
-        - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
+  # - node:
+  #     pkg: "sub_hardware"
+  #     exec: "dvl_node.py"
+  #     name: "dvl_node"
+  #     param:
+  #       - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
 
-  - node:
-      pkg: "vectornav"
-      exec: "vectornav"
-      name: "vectornav"
-      param:
-        - from: "$(find-pkg-share vectornav)/config/vectornav.yaml"
+  # - node:
+  #     pkg: "vectornav"
+  #     exec: "vectornav"
+  #     name: "vectornav"
+  #     param:
+  #       - from: "$(find-pkg-share vectornav)/config/vectornav.yaml"
   
   # 3. Start ROSbridge for ASUQTR dashboard interaction
   - node:

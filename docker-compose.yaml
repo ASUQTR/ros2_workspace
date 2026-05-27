@@ -5,8 +5,10 @@ services:
   sub_control_core:
     # TODO add docker repository prefix to image when repository server available
     image: asuqtr_ros2:latest
+    build:
+      context: ./env/desktop
+      dockerfile: Dockerfile
     container_name: asuqtr_ros2
-    runtime: nvidia
     privileged: true
     network_mode: "host"
     shm_size: "1gb"

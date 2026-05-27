@@ -1,0 +1,45 @@
+launch:
+  # Unity is the simulator in this launch:
+  # - Unity publishes /odometry/filtered as nav_msgs/Odometry.
+  # - control_node publishes /thruster_cmd as sub_interfaces/ThrusterCommand.
+  # - rosbridge_server exposes ws://127.0.0.1:9090 for the Unity WebSocket client.
+  #
+  # Deliberately not launched here:
+  # - Gazebo
+  # - robot_localization EKF
+  # - physical hardware nodes: actuator_node, gpio_node, sensor_node, dvl_node, vectornav
+  - arg:
+      name: "urdf_file"
+      default: "$(find-pkg-share sub_launch)/urdf/asuqtr_sub.urdf"
+
+  - node:
+      pkg: "sub_control"
+      exec: "control_node.py"
+      name: "control_node"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share sub_control)/config/params.yaml"
+        - name: "control_mode"
+          value: "lqr_tuning"
+        - name: "use_sim_time"
+          value: false
+
+  - node:
+      pkg: "robot_state_publisher"
+      exec: "robot_state_publisher"
+      name: "robot_state_publisher"
+      output: "screen"
+      param:
+        - name: "robot_description"
+          value: "$(command 'cat $(var urdf_file)')"
+        - name: "use_sim_time"
+          value: false
+
+  - node:
+      pkg: "rosbridge_server"
+      exec: "rosbridge_websocket"
+      name: "rosbridge_websocket"
+      output: "screen"
+      param:
+        - name: "port"
+          value: 9090
