@@ -4,165 +4,230 @@
   <img src="docs/logosub.png" alt="ASUQTR logo" width="80" style="vertical-align: middle; margin-right: 30px;"/><img src="docs/sub.JPG" alt="ASUQTR Submarine" width="280" style="vertical-align: middle;"/><img src="docs/ros2.png" alt="ROS2" width="80" style="vertical-align: middle; margin-left: 30px;"/>
 </p>
 
-Welcome to the core ROS 2 workspace for the ASUQTR submarine. This repository contains install scripts to deploy ASUQTR software infrastructure, the entire ASUQTR source code (hardware drivers & control math (LQR), autonomous behaviors, etc.) and system-level launch configurations.
+Welcome to the core ROS 2 workspace for the ASUQTR submarine. This repository contains the full ASUQTR software stack (hardware drivers, LQR control, autonomous behaviors) along with Docker environments for both **desktop development** and **Jetson Xavier deployment**.
+
+---
 
 ## Layered Software Architecture
-ASUQTR's ROS2 software architecture contains 5 ROS2 packages, following a typical layered architecture patern :
+
+ASUQTR's ROS 2 software follows a typical layered architecture with 5 packages:
+
 > [!TIP]
-> Click the sub package links to go to their README.md and get further details and specifications
-* [`sub_hardware`](src/sub_hardware/)
-* [`sub_control`](src/sub_control/)
-* [`sub_autonomy`](src/sub_autonomy/)
-* [`sub_interfaces`](src/sub_interfaces/)
-* [`sub_launch`](src/sub_launch/)
+> Click the package links to access their individual README and specifications.
 
-
-In the following architecture diagram, __BLACK__ icons are ASUQTR nodes/custom code, while __WHITE__ icons are standard ROS2 packages.
+* [`sub_hardware`](workspace/packages/sub_hardware/)
+* [`sub_control`](workspace/packages/sub_control/)
+* [`sub_autonomy`](workspace/packages/sub_autonomy/)
+* [`sub_interfaces`](workspace/packages/sub_interfaces/)
+* [`sub_launch`](workspace/packages/sub_launch/)
 
 <a target="_blank">
-  <img src="docs/asuqtr_ros2_ar(1).png" alt="Download MobaXterm" width=700"/>
+  <img src="docs/asuqtr_ros2_ar(1).png" alt="ASUQTR ROS2 Architecture" width="700"/>
 </a>
 
+In this diagram, **BLACK** icons are ASUQTR nodes/custom code, **WHITE** icons are standard ROS 2 packages.
 
+---
 
-## System Deployment
-To ensure consistency across the team and the physical robot, this project is fully containerized using Docker, with built-in support for the ASUQTR Web Dashboard via `rosbridge`.
+## Repository Structure
 
-### **TODO** add diagram 
+```
+ros2_workspace/
+├── workspace/
+│   ├── packages/          ← ROS 2 source packages (mounted as /workspace in Docker)
+│   │   ├── sub_hardware/
+│   │   ├── sub_control/
+│   │   ├── sub_autonomy/
+│   │   ├── sub_interfaces/
+│   │   └── sub_launch/
+│   └── build.sh           ← Build script (run inside the container)
+├── env/
+│   ├── desktop/           ← Docker environment for development on any machine
+│   │   ├── Dockerfile
+│   │   ├── setup.sh       ← Builds the Docker image (run once)
+│   │   └── start.sh       ← Starts the container
+│   └── jetson/            ← Docker environment for the physical submarine
+│       ├── Dockerfile
+│       ├── setup.sh       ← Full Jetson setup (run once on fresh flash)
+│       ├── start.sh       ← Starts the container
+│       └── docker-compose.yaml
+├── start-desktop.sh       ← Entry point for desktop development
+└── start-jetson.sh        ← Entry point for Jetson deployment
+```
+
+---
+
+## Environments Overview
+
+| | Desktop | Jetson Xavier |
+|---|---|---|
+| **Purpose** | Active development | Physical submarine |
+| **Platform** | Any x86_64 Ubuntu 22.04 / macOS / WSL2 | NVIDIA Jetson Xavier (JetPack 5.1.6) |
+| **Docker image** | `ros2-humble` | `ros2-jetson` |
+| **Entry point** | `./start-desktop.sh` | `./start-jetson.sh` |
+| **Container name** | `ros2-desktop` | `ros2-desktop` |
+| **Workspace mount** | `$(pwd)/workspace:/workspace` | `$(pwd)/workspace:/workspace` |
 
 ---
 
 ## <a id="ssh"></a>🔌 0. Connect to the Jetson Xavier (SSH)
 
-Before running any scripts or containers on the physical submarine, you must log into the Jetson Xavier with your laptop with either of :
+> [!NOTE]
+> Skip this section if you are working in desktop mode.
 
-### MobaXterm (Common for Windows users) :
+Before running any scripts on the physical submarine, log into the Jetson Xavier from your laptop:
+
+### MobaXterm (Windows)
 <a href="https://mobaxterm.mobatek.net/download.html" target="_blank">
   <img src="docs/mobaxterm_logo.png" alt="Download MobaXterm" width="140"/>
 </a>
 
-1. Open MobaXterm and click **Session** -> **SSH**.
-2. Enter the Jetson's IP address (e.g., `192.168.x.x`) in the "Remote host" field.
-3. Specify the Jetson's username (`asuqtr`), click **OK**, and enter the password (`asuqtr123`) when prompted.
+1. Open MobaXterm → **Session** → **SSH**
+2. Enter the Jetson's IP address (`192.168.x.x`)
+3. Username: `asuqtr`, password: `asuqtr123`
 
 ### VS Code (Recommended)
 <a href="https://code.visualstudio.com/download" target="_blank">
-  <img src="docs/vs-code-logo.png" alt="Download VScode" width="50"/>
+  <img src="docs/vs-code-logo.png" alt="Download VSCode" width="50"/>
 </a>
 
-While you can write code in basic editors from MobaXterm,, the best developer experience is to attach Visual Studio Code directly to the running ROS 2 Docker container.
+1. Install the `Remote - SSH` and `Docker` extensions
+2. Connect via `Remote - SSH` → `ssh asuqtr@<JETSON_IP>` (password: `asuqtr123`)
+3. Once the container is running, open the `Docker` tab → find `ros2-desktop` → right-click → **Attach Visual Studio Code** → open `/workspace`
 
-1. Install the `Remote - SSH` and `Docker` extensions in your local VS Code.
-2. Use the `Remote - SSH` extension to connect to the Jetson (`ssh asuqtr@<JETSON_IP>`) Password is `asuqtr123`.
-3. __(If containers already started)__ Open the `Docker` extension tab in the left sidebar, find the running `asuqtr_ros2` container, right-click it, and select **Attach Visual Studio Code**.  Open the `/workspace` folder in the new VS Code window. 
+---
 
-You now have a full IDE and integrated terminals directly inside the ROS 2 environment!
+## ⚙️ 1. Setup
 
+### 💻 Desktop (Development)
 
-## <a id="install"></a>⚙️ 1. Install
+Use this to develop and test code on your own machine — no submarine required.
+
+1. Clone the repository:
+    ```bash
+    git clone <repo_url>
+    cd ros2_workspace
+    ```
+
+2. Start the container (builds the Docker image automatically on first run):
+    ```bash
+    ./start-desktop.sh
+    ```
+    > The script checks for the `ros2-humble` image and runs `env/desktop/setup.sh` if it is missing.
+    > It also detects whether the IMU (`/dev/ttyUSB0`) is connected and passes it through if available.
+
+You are now inside the `ros2-desktop` container with `/workspace` mounted.
+
+---
+
+### 🤖 Jetson Xavier (Physical Submarine)
 
 > [!WARNING]
-> Only run this on a freshly flashed Jetson Xavier (via NVIDIA SDK Manager) with __JetPack 5.1.6__ . This step is not needed if you Xavier is already setup for ASUQTR ROS2 workspace.
+> Only run `setup.sh` on a freshly flashed Jetson Xavier via NVIDIA SDK Manager with **JetPack 5.1.6**. Skip this if the Jetson is already configured for ASUQTR.
 >
 > <a href="https://developer.nvidia.com/sdk-manager" target="_blank">
->  <img src="docs/nvidia.png" alt="Download SDK manager" width="150"/>
-</a>
+>   <img src="docs/nvidia.png" alt="Download SDK Manager" width="150"/>
+> </a>
 
-1. SSH log into the Jetson Xavier.  [See these instructions](#ssh)
-2. Clone this repo via SSH on the in the `$HOME` directory
-3. `cd` into the repo and run `setup_xavier.sh`. This will setup ssd, docker, jetson IO permissions, etc. and deploy ASUQTR infrastructure.
+1. SSH into the Jetson Xavier. [See instructions above](#ssh)
+
+2. Clone the repository in the home directory:
     ```bash
-    # While logged into a Jetson Xavier over SSH
-    cd ~/ros2_workspace
-    sudo ./setup_jetson.sh
+    cd ~
+    git clone <repo_url>
+    cd ros2_workspace
     ```
-4. Reboot the jetson xavier
 
-## 🐳 2. Usage (Docker)
-
-For software development and simulation, we use Docker. The included `docker-compose.yaml` file in this repository allows to spin up the ROS 2 development container alongside the ASUQTR web dashboard.
-### 🐳📦 Starting ASUQTR containers
-> [!WARNING]
-> If you ran the `setup_xavier.sh` script from [1. Install](#install) step, the containers have already been started with a a `unless-stopped` policy, which means they will always on Xavier power up, unless you explicitely stop them with in a terminal
-
-1. To verify if both the `asuqtr_ros2` and `asuqtr-dashboard` containers are running:
-   ```bash
-   docker ps
-   ```
-2. If the containers are not started :
-   ```bash
-   docker compose up -d
-   ```
-### 💻 Opening a Shell Into `asuqtr_ros2` Container
-Use either of :
-1. While logged into a Jetson Xavier over SSH
+3. Run the Jetson setup script **(first time only)**:
     ```bash
-    docker exec -it asuqtr_ros2 /bin/bash
+    sudo bash env/jetson/setup.sh
     ```
-2. [Use VS Code addons](#vs-code-recommended) (Recommended)
+    This sets up the SSD, Docker, Jetson I/O permissions, and deploys the ASUQTR infrastructure.
 
-### 🌐 Accessing the Web Dashboard
-The `docker-compose` setup automatically maps the ASUQTR dashboard to port `80`. 
-To view the UI, simply open a web browser (Chrome, Firefox, etc.) on your host computer and navigate to the Jetson's IP address:
-```text
-http://<JETSON_IP>
+4. Reboot the Jetson:
+    ```bash
+    sudo reboot
+    ```
+
+5. After reboot, start the container:
+    ```bash
+    ./start-jetson.sh
+    ```
+
+You are now inside the container with `/workspace` mounted. The container restarts automatically on power-up after initial setup.
+
+---
+
+## 🛠️ 2. Build the ROS 2 Workspace
+
+Once inside the container (either desktop or Jetson), build the workspace:
+
+```bash
+cd /workspace
+bash build.sh
+source install/setup.bash
 ```
-
-## 🛠️ 3. Build ROS2 Workspace
-
-Once your container is running, you need to build the ROS 2 workspace. We heavily rely on the `--symlink-install` flag during development.
 
 > [!TIP]
 > **Why `--symlink-install`?**
-> Normally, `colcon` copies your code into the `install` directory. By using a symlink, ROS 2 creates a shortcut back to your original source files. **This means you can edit Python scripts, tweak LQR variables in YAML config files, or change launch parameters and immediately run the code without having to rebuild the workspace!** (Note: C++ changes still require a rebuild, like the `vectornav` IMU code).
+> The build script uses `colcon build` which creates symlinks back to your source files. This means you can edit Python scripts and YAML configs (LQR params, EKF profiles, launch files) and rerun immediately — **no rebuild needed**. Only C++ changes (e.g. the VectorNav IMU driver) require a rebuild.
 
-Open a terminal inside the container (or use your attached VS Code terminal) and run:
-1. ros2 workspace build tool
-    ```bash
-    cd /workspace
-    colcon build --symlink-install
-    ```
-2. "source" the build, which means install all the new executable that were built.
-    ```bash
-    source install/setup.bash
-    ```
+---
 
-## 🚀 4. Run & Test the Submarine
+## 🚀 3. Run & Test the Submarine
 
-Here how to start the whole submarine and some examples to monitor/test the navigation system.
+Open 3 terminals inside the container (or split your VS Code terminal with `Ctrl+Shift+5`).
 
-### Step 1: Open Terminals
-Open 3 separate terminals in the `asuqtr_ros2` container (or split your VS Code terminal).
-
-### Step 2: Launch the Submarine (Terminal 1)
-In your first terminal, launch the main system architecture. This brings up the control nodes, TF2 trees, `robot_localization`, hardware nodes and a lot of ther stuff.
+### Terminal 1 — Launch the submarine
 
 ```bash
 ros2 launch sub_launch sub.launch.yaml
 ```
 
-### Step 3: Monitor the Estimated localization from Kalman Filter (Terminal 2)
-In your second terminal, you can listen to the Extended Kalman Filter to see where the Sub thinks it is. Here are some position/velocities examples. You can apply the same pattern for quaternions or accelerations.
+This brings up the full system: control nodes, TF2 tree, EKF (`robot_localization`), hardware drivers, and rosbridge.
 
-To observe the **estimated position**:
+**To use a specific EKF sensor profile**, pass the config file as an argument:
+
 ```bash
-ros2 topic echo /odometry/filtered --field pose.pose.position
+# IMU + DVL only (no depth sensor)
+ros2 launch sub_launch sub.launch.yaml ekf_config_file:=$(ros2 pkg prefix sub_control)/share/sub_control/config/robot_localization_imu_dvl.yaml
+
+# IMU only
+ros2 launch sub_launch sub.launch.yaml ekf_config_file:=$(ros2 pkg prefix sub_control)/share/sub_control/config/robot_localization_imu_only.yaml
+
+# Jean's tuning
+ros2 launch sub_launch sub.launch.yaml ekf_config_file:=$(ros2 pkg prefix sub_control)/share/sub_control/config/Jean_tuned.yaml
 ```
 
-To observe the **linear velocities**:
+### Terminal 2 — Monitor the EKF state estimator
+
 ```bash
+# Estimated position (world frame)
+ros2 topic echo /odometry/filtered --field pose.pose.position
+
+# Linear velocities (body frame)
 ros2 topic echo /odometry/filtered --field twist.twist.linear
 ```
 
-### Step 4: Send a Target Command (Terminal 3)
-In your third terminal, publish a target state to the control system. 
+### Terminal 3 — Send a target command
 
 > [!NOTE]
-> For ease of use, the `/debug/target_pose` topic features a custom parser. Position is in meters, and Orientation explicitly takes Roll, Pitch, and Yaw in degrees mapped to the `x, y, z` fields.
+> Position is in meters. Orientation uses Roll, Pitch, Yaw **in degrees** mapped to `x, y, z`.
 
 ```bash
-ros2 topic pub -1 /debug/target_pose geometry_msgs/msg/PoseStamped "{pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0}}}"
+ros2 topic pub -1 /debug/target_pose geometry_msgs/msg/PoseStamped \
+  "{pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0}}}"
 ```
 
 > [!IMPORTANT]
-> This command is only available if the `control_node` is in `lqr_tuning` mode! See `src/sub_control/config/params.yaml`
+> `/debug/target_pose` is only available when `control_node` is in `lqr_tuning` mode. See [`workspace/packages/sub_control/config/params.yaml`](workspace/packages/sub_control/config/params.yaml).
+
+---
+
+## 🌐 Web Dashboard
+
+The `docker-compose` setup on the Jetson maps the ASUQTR dashboard to port `80`. Open a browser on any machine on the same network:
+
+```
+http://<JETSON_IP>
+```
