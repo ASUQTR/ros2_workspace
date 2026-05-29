@@ -1,0 +1,29 @@
+##### Common python packages #####
+kiwisolver
+matplotlib
+numpy
+scipy
+
+##### power_node / serial communication #####
+pyserial
+
+##### dvl_node #####
+crcmod
+
+##### asuqtr_restful_api #####
+Flask~=1.1.2
+flask-cors~=3.0.9
+
+#### Flexbe webui ####
+fastapi>=0.109.1
+pydantic>=1.10.13
+websockets>=10.3
+MarkupSafe==2.0.1
+uvicorn
+
+# NOTE: Packages intentionally excluded from desktop (Xavier hardware only):
+#   adafruit-circuitpython-pca9685  — PCA9685 PWM driver (I2C, actuator_node)
+#   adafruit-blinka                 — CircuitPython hardware abstraction layer
+#   adafruit-circuitpython-motor    — Motor control via PCA9685 (I2C)
+#   smbus2                          — I2C bus communication (sensor_node / Bar30)
+#   Jetson.GPIO                     — Jetson Xavier GPIO (gpio_node, kill switch)

@@ -52,8 +52,11 @@ RUN bash -c "source /opt/ros/humble/setup.bash && colcon build --cmake-args -DBU
 
 WORKDIR /workspace
 
-COPY requirements_xavier.txt /tmp/requirements.txt
+COPY requirements_desktop.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
+
+# Auto-source ASUQTR aliases when a terminal opens in the container
+RUN echo '[ -f /workspace/asuqtr_aliases.sh ] && source /workspace/asuqtr_aliases.sh' >> ~/.bashrc
 
 COPY ros_entrypoint.sh /
 RUN chmod +x /ros_entrypoint.sh

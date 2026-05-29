@@ -40,17 +40,22 @@ ros2_workspace/
 │   │   ├── sub_autonomy/
 │   │   ├── sub_interfaces/
 │   │   └── sub_launch/
+│   │       └── launch/
+│   │           ├── sub.launch.yaml        ← Full system launch (Xavier)
+│   │           └── desktop.launch.yaml    ← Desktop mode (IMU only)
+│   ├── asuqtr_aliases.sh  ← ROS 2 aliases (auto-sourced in the container)
 │   └── build.sh           ← Build script (run inside the container)
 ├── env/
 │   ├── desktop/           ← Docker environment for development on any machine
 │   │   ├── Dockerfile
-│   │   ├── setup.sh       ← Builds the Docker image (run once)
-│   │   └── start.sh       ← Starts the container
+│   │   └── setup.sh       ← Builds the Docker image (run once)
 │   └── jetson/            ← Docker environment for the physical submarine
 │       ├── Dockerfile
 │       ├── setup.sh       ← Full Jetson setup (run once on fresh flash)
 │       ├── start.sh       ← Starts the container
 │       └── docker-compose.yaml
+├── requirements_desktop.txt  ← Python deps for desktop mode (no Jetson hardware)
+├── requirements_xavier.txt   ← Full Python deps for the Xavier
 ├── start-desktop.sh       ← Entry point for desktop development
 └── start-jetson.sh        ← Entry point for Jetson deployment
 ```
@@ -62,11 +67,13 @@ ros2_workspace/
 | | Desktop | Jetson Xavier |
 |---|---|---|
 | **Purpose** | Active development | Physical submarine |
-| **Platform** | Any x86_64 Ubuntu 22.04 / macOS / WSL2 | NVIDIA Jetson Xavier (JetPack 5.1.6) |
+| **Platform** | Any x86_64 machine with Docker (Ubuntu 20.04+, macOS, WSL2) | NVIDIA Jetson Xavier (JetPack 5.1.6) |
 | **Docker image** | `ros2-humble` | `ros2-jetson` |
 | **Entry point** | `./start-desktop.sh` | `./start-jetson.sh` |
+| **Launch file** | `desktop.launch.yaml` | `sub.launch.yaml` |
 | **Container name** | `ros2-desktop` | `ros2-desktop` |
 | **Workspace mount** | `$(pwd)/workspace:/workspace` | `$(pwd)/workspace:/workspace` |
+| **Hardware available** | IMU VectorNav (USB) | IMU + DVL + Bar30 + GPIO + Actuators |
 
 ---
 
@@ -169,16 +176,69 @@ source install/setup.bash
 ```
 
 > [!TIP]
+> **Alias available:** `asuqtr-build` runs all three commands above in one shot.
+
+> [!TIP]
 > **Why `--symlink-install`?**
 > The build script uses `colcon build` which creates symlinks back to your source files. This means you can edit Python scripts and YAML configs (LQR params, EKF profiles, launch files) and rerun immediately — **no rebuild needed**. Only C++ changes (e.g. the VectorNav IMU driver) require a rebuild.
 
 ---
 
-## 🚀 3. Run & Test the Submarine
+## 🚀 3. Run & Test
+
+> [!TIP]
+> All aliases below are available inside the container. Type `asuqtr-help` for the full list.
+
+### 💻 Desktop Mode (laptop, IMU connected)
+
+Launches the controller + EKF (IMU only) + VectorNav + rosbridge. No I2C hardware required.
 
 Open 3 terminals inside the container (or split your VS Code terminal with `Ctrl+Shift+5`).
 
-### Terminal 1 — Launch the submarine
+**Terminal 1 — Launch the desktop system**
+
+```bash
+asuqtr-launch
+# equivalent: ros2 launch sub_launch desktop.launch.yaml
+```
+
+**To use a specific EKF sensor profile**, pass the config file as an argument:
+
+```bash
+# IMU + DVL (if DVL is connected)
+asuqtr-launch-dvl
+```
+
+> [!NOTE]
+> `Jean_tuned.yaml` requires IMU + DVL + Bar30 — Xavier only.
+
+**Terminal 2 — Monitor thruster commands (LQR output)**
+
+```bash
+asuqtr-motors
+# equivalent: ros2 topic echo /thruster_cmd
+```
+
+**Terminal 3 — Send a target pose to the controller**
+
+> [!NOTE]
+> Position in meters. Orientation Roll/Pitch/Yaw **in degrees** mapped to `x, y, z`.
+
+```bash
+asuqtr-target 0 0 0.5 0 0 45
+# equivalent: ros2 topic pub -1 /debug/target_pose geometry_msgs/msg/PoseStamped ...
+```
+
+> [!IMPORTANT]
+> `/debug/target_pose` is only available when `control_node` is in `lqr_tuning` mode. See [`workspace/packages/sub_control/config/params.yaml`](workspace/packages/sub_control/config/params.yaml).
+
+---
+
+### 🤖 Xavier Mode (physical submarine, full system)
+
+Open 3 terminals inside the container (or split your VS Code terminal with `Ctrl+Shift+5`).
+
+**Terminal 1 — Launch the submarine**
 
 ```bash
 ros2 launch sub_launch sub.launch.yaml
@@ -195,11 +255,11 @@ ros2 launch sub_launch sub.launch.yaml ekf_config_file:=$(ros2 pkg prefix sub_co
 # IMU only
 ros2 launch sub_launch sub.launch.yaml ekf_config_file:=$(ros2 pkg prefix sub_control)/share/sub_control/config/robot_localization_imu_only.yaml
 
-# Jean's tuning
+# Jean's tuning (IMU + DVL + Bar30, optimized covariances)
 ros2 launch sub_launch sub.launch.yaml ekf_config_file:=$(ros2 pkg prefix sub_control)/share/sub_control/config/Jean_tuned.yaml
 ```
 
-### Terminal 2 — Monitor the EKF state estimator
+**Terminal 2 — Monitor the EKF state estimator**
 
 ```bash
 # Estimated position (world frame)
@@ -209,7 +269,7 @@ ros2 topic echo /odometry/filtered --field pose.pose.position
 ros2 topic echo /odometry/filtered --field twist.twist.linear
 ```
 
-### Terminal 3 — Send a target command
+**Terminal 3 — Send a target command**
 
 > [!NOTE]
 > Position is in meters. Orientation uses Roll, Pitch, Yaw **in degrees** mapped to `x, y, z`.

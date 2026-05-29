@@ -1,26 +1,37 @@
-# Configuration de bureau
-Cet environnement permet de démarrer les noeuds dans un conteneur Docker sur un processeur x86.
+# Desktop Environment
+
+This environment lets you develop and test ROS 2 code inside a Docker container on any x86_64 machine (Ubuntu 20.04+, macOS, WSL2). It does **not** include Jetson hardware drivers (Bar30, GPIO, PCA9685) — only the VectorNav IMU via USB is supported.
 
 > [!NOTE]
-> Veuillez vous assurer que les fichiers `requirements_xavier.txt` et `underlay.repos` ont bien été mis à jour avant de générer l'image Docker.
+> Make sure `requirements_desktop.txt` and `underlay.repos` are up to date before building the Docker image.
 
-Pour générer l'image, exécutez le scipt `setup.sh`. Il va s'assurer que les dépendances sont à jour avant de générer une image nommée `ros2-humble`.
+## Build the image (first time only)
 
-Une fois l'image générée, exécutez le script `start.sh` pour démarrer le conteneur. Vous entrerez dans le terminal du conteneur et le volume du workspace sera automatiquement monté.
+From the **repo root**:
 
-## Multiplier les possibilités avec plusieurs terminaux
-Pour ouvrir un autre terminal indépendant :
+```bash
+./start-desktop.sh
+```
+
+The script automatically checks whether the `ros2-humble` image exists. If not, it calls `env/desktop/setup.sh` to build it (~20-30 min depending on your connection), then starts the container.
+
+## Open additional terminals
+
 ```bash
 docker exec -it ros2-desktop /bin/bash
 ```
 
-Dans le terminal du Docker entrer la commande suivante: 
-```bash
-source /opt/ros/humble/setup.bash
+ROS 2 sources and ASUQTR aliases are loaded automatically on every terminal open.
 
-source /opt/underlay_ws/install/setup.bash
+## Available aliases
 
-if [ -f "/workspace/install/setup.bash" ]; then
-    source /workspace/install/setup.bash
-fi
+Once inside the container, type `asuqtr-help` to list all shortcuts:
+
+```
+asuqtr-build              Build & source the workspace
+asuqtr-launch             Launch the desktop system (IMU only)
+asuqtr-motors             Thruster commands in Newtons
+asuqtr-pos                Estimated XYZ position
+asuqtr-target x y z r p y  Send a target pose to the controller
+...
 ```
