@@ -28,3 +28,7 @@ Thumbs.db
 *.swp
 *.o
 *.so
+
+# --- Docker build artifacts ---
+env/desktop/requirements_desktop.txt
+env/desktop/underlay.repos
