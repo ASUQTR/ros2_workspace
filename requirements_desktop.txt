@@ -1,6 +1,6 @@
 ##### Common python packages #####
 kiwisolver
-matplotlib
+matplotlib>=3.7
 numpy
 scipy
 

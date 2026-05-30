@@ -8,7 +8,6 @@ matplotlib.use("TkAgg")
 
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 import rclpy
@@ -188,35 +187,52 @@ def quaternion_to_euler_xyz(x, y, z, w):
     return roll, pitch, yaw
 
 
+MODES = {
+    1: "NED raw  (VN-100 in)",
+    2: "ENU      (-> EKF in)",
+    3: "ENU EKF  (filtered) ",
+    4: "NED LQR  (-> LQR in)",
+}
+
+
+def enu_to_ned_rpy(roll_enu, pitch_enu, yaw_enu):
+    """Convert ENU/FLU roll/pitch/yaw to NED/FRD — same logic as control_node.py."""
+    roll_ned = roll_enu
+    pitch_ned = -pitch_enu
+    yaw_ned = math.pi / 2.0 - yaw_enu
+    yaw_ned = (yaw_ned + math.pi) % (2 * math.pi) - math.pi
+    return roll_ned, pitch_ned, yaw_ned
+
+
 class ImuRealtimeDashboard(Node):
     def __init__(self):
         super().__init__("imu_realtime_dashboard")
 
         self.declare_parameter("imu_topic", "/vectornav/imu")
         self.declare_parameter("odom_topic", "/odometry/filtered")
-        self.declare_parameter("active_source", "imu")  # imu or odom
-        self.declare_parameter("use_degrees", True)
+        self.declare_parameter("active_mode", 1)  # 1-4
 
         self.imu_topic = str(self.get_parameter("imu_topic").value)
         self.odom_topic = str(self.get_parameter("odom_topic").value)
-        self.active_source = str(self.get_parameter("active_source").value).lower()
-        self.use_degrees = bool(self.get_parameter("use_degrees").value)
+        self.active_mode = int(self.get_parameter("active_mode").value)
 
-        if self.active_source not in ("imu", "odom"):
-            self.active_source = "imu"
+        if self.active_mode not in MODES:
+            self.active_mode = 1
 
         self.lock = threading.Lock()
 
-        self.roll = 0.0
-        self.pitch = 0.0
-        self.yaw = 0.0
+        # ENU RPY from vectornav/imu
+        self.imu_roll_enu = 0.0
+        self.imu_pitch_enu = 0.0
+        self.imu_yaw_enu = 0.0
+
+        # ENU RPY from odometry/filtered
+        self.ekf_roll_enu = 0.0
+        self.ekf_pitch_enu = 0.0
+        self.ekf_yaw_enu = 0.0
 
         self.imu_msg_count = 0
-        self.odom_msg_count = 0
-        self.last_source_used = "none"
-        self.last_frame_id = ""
-        self.last_stamp_sec = 0
-        self.last_stamp_nanosec = 0
+        self.ekf_msg_count = 0
 
         self.L = 1.0
         self.L_ned = 2 * self.L
@@ -270,7 +286,7 @@ class ImuRealtimeDashboard(Node):
         self.get_logger().info(f"Dashboard pret.")
         self.get_logger().info(f"IMU topic  : {self.imu_topic}")
         self.get_logger().info(f"Odom topic : {self.odom_topic}")
-        self.get_logger().info(f"Source active initiale : {self.active_source}")
+        self.get_logger().info(f"Mode actif : [{self.active_mode}] {MODES[self.active_mode]}")
 
     def setup_axes(self):
         ax = self.ax
@@ -327,97 +343,86 @@ class ImuRealtimeDashboard(Node):
         self.tB_y = self.ax.text(0, self.L_body * 1.06, 0, "y_b right", color="green", fontsize=11, fontweight="bold")
         self.tB_z = self.ax.text(0, 0, self.L_body * 1.06, "z_b down", color="orange", fontsize=11, fontweight="bold")
 
-        self.model_artists = []
+        # Create mesh collections once — updated in-place each frame via set_verts()
+        mesh_config = [
+            ("V_body",  "F_body",  (0.45, 0.45, 0.50), 0.45),
+            ("V_nose",  "F_nose",  (0.90, 0.30, 0.30), 0.85),
+            ("V_plate", "F_plate", (0.72, 0.72, 0.78), 0.30),
+            ("V_sideL", "F_sideL", (0.55, 0.55, 0.60), 0.35),
+            ("V_sideR", "F_sideR", (0.55, 0.55, 0.60), 0.35),
+        ]
+        self.mesh_collections = []
+        for key_v, key_f, color, alpha in mesh_config:
+            polys = faces_to_polys(self.geom[key_v], self.geom[key_f])
+            coll = Poly3DCollection(polys, facecolors=[color], edgecolors="none", alpha=alpha)
+            self.ax.add_collection3d(coll)
+            self.mesh_collections.append((coll, key_v, key_f))
 
     def on_close(self, event):
         self.get_logger().info("Fermeture de la fenetre.")
         rclpy.shutdown()
 
     def on_key(self, event):
-        if event.key == "i":
-            self.active_source = "imu"
-            self.get_logger().info("Source active -> IMU")
-        elif event.key == "o":
-            self.active_source = "odom"
-            self.get_logger().info("Source active -> ODOM")
-        elif event.key == "t":
-            self.active_source = "odom" if self.active_source == "imu" else "imu"
-            self.get_logger().info(f"Source active -> {self.active_source.upper()}")
+        if event.key in ("1", "2", "3", "4"):
+            self.active_mode = int(event.key)
+            self.get_logger().info(f"Mode -> [{self.active_mode}] {MODES[self.active_mode]}")
         elif event.key == "escape":
             plt.close(self.fig)
 
     def imu_callback(self, msg: Imu):
-        with self.lock:
-            self.imu_msg_count += 1
-
-        if self.active_source != "imu":
-            return
-
         q = msg.orientation
         if q.x == 0.0 and q.y == 0.0 and q.z == 0.0 and q.w == 0.0:
             return
-
         roll, pitch, yaw = quaternion_to_euler_xyz(q.x, q.y, q.z, q.w)
-
         with self.lock:
-            self.roll = roll
-            self.pitch = pitch
-            self.yaw = yaw
-            self.last_source_used = "imu"
-            self.last_frame_id = msg.header.frame_id
-            self.last_stamp_sec = msg.header.stamp.sec
-            self.last_stamp_nanosec = msg.header.stamp.nanosec
+            self.imu_roll_enu = roll
+            self.imu_pitch_enu = pitch
+            self.imu_yaw_enu = yaw
+            self.imu_msg_count += 1
 
     def odom_callback(self, msg: Odometry):
-        with self.lock:
-            self.odom_msg_count += 1
-
-        if self.active_source != "odom":
-            return
-
         q = msg.pose.pose.orientation
         if q.x == 0.0 and q.y == 0.0 and q.z == 0.0 and q.w == 0.0:
             return
-
         roll, pitch, yaw = quaternion_to_euler_xyz(q.x, q.y, q.z, q.w)
-
         with self.lock:
-            self.roll = roll
-            self.pitch = pitch
-            self.yaw = yaw
-            self.last_source_used = "odom"
-            self.last_frame_id = msg.header.frame_id
-            self.last_stamp_sec = msg.header.stamp.sec
-            self.last_stamp_nanosec = msg.header.stamp.nanosec
-
-    def clear_model(self):
-        for artist in self.model_artists:
-            artist.remove()
-        self.model_artists = []
-
-    def add_mesh(self, vertices, faces, facecolor, alpha):
-        polys = faces_to_polys(vertices, faces)
-        coll = Poly3DCollection(polys, facecolors=[facecolor], edgecolors="none", alpha=alpha)
-        self.ax.add_collection3d(coll)
-        self.model_artists.append(coll)
+            self.ekf_roll_enu = roll
+            self.ekf_pitch_enu = pitch
+            self.ekf_yaw_enu = yaw
+            self.ekf_msg_count += 1
 
     def set_axis_line(self, line, p1):
         line.set_data_3d([0, p1[0]], [0, p1[1]], [0, p1[2]])
 
     def update_plot(self, frame=None):
         with self.lock:
-            roll = self.roll
-            pitch = self.pitch
-            yaw = self.yaw
+            imu_r = self.imu_roll_enu
+            imu_p = self.imu_pitch_enu
+            imu_y = self.imu_yaw_enu
+            ekf_r = self.ekf_roll_enu
+            ekf_p = self.ekf_pitch_enu
+            ekf_y = self.ekf_yaw_enu
             imu_count = self.imu_msg_count
-            odom_count = self.odom_msg_count
-            last_source_used = self.last_source_used
-            last_frame_id = self.last_frame_id
-            last_stamp_sec = self.last_stamp_sec
-            last_stamp_nanosec = self.last_stamp_nanosec
-            active_source = self.active_source
+            ekf_count = self.ekf_msg_count
+            active_mode = self.active_mode
 
-        r = rz(yaw) @ ry(pitch) @ rx(roll)
+        # Compute all 4 stages
+        ned1_r, ned1_p, ned1_y = enu_to_ned_rpy(imu_r, imu_p, imu_y)   # NED raw  (IMU)
+        enu2_r, enu2_p, enu2_y = imu_r, imu_p, imu_y                    # ENU IMU  (-> EKF)
+        enu3_r, enu3_p, enu3_y = ekf_r, ekf_p, ekf_y                    # ENU EKF  (filtered)
+        ned4_r, ned4_p, ned4_y = enu_to_ned_rpy(ekf_r, ekf_p, ekf_y)   # NED LQR  (-> LQR)
+
+        # Select angles for 3D model — always in NED for correct display
+        if active_mode == 1:
+            roll_3d, pitch_3d, yaw_3d = ned1_r, ned1_p, ned1_y
+        elif active_mode == 2:
+            roll_3d, pitch_3d, yaw_3d = enu_to_ned_rpy(enu2_r, enu2_p, enu2_y)
+        elif active_mode == 3:
+            roll_3d, pitch_3d, yaw_3d = enu_to_ned_rpy(enu3_r, enu3_p, enu3_y)
+        else:
+            roll_3d, pitch_3d, yaw_3d = ned4_r, ned4_p, ned4_y
+
+        r = rz(yaw_3d) @ ry(pitch_3d) @ rx(roll_3d)
 
         xb = self.ddisp @ (r[:, 0] * self.L_body)
         yb = self.ddisp @ (r[:, 1] * self.L_body)
@@ -438,63 +443,39 @@ class ImuRealtimeDashboard(Node):
         self.tB_z.set_position((pz[0], pz[1]))
         self.tB_z.set_3d_properties(pz[2], zdir='z')
 
-        self.clear_model()
-
-        for key_v, key_f, color, alpha in [
-            ("V_body", "F_body", (0.45, 0.45, 0.50), 0.45),
-            ("V_nose", "F_nose", (0.90, 0.30, 0.30), 0.85),
-            ("V_plate", "F_plate", (0.72, 0.72, 0.78), 0.30),
-            ("V_sideL", "F_sideL", (0.55, 0.55, 0.60), 0.35),
-            ("V_sideR", "F_sideR", (0.55, 0.55, 0.60), 0.35),
-        ]:
+        for coll, key_v, key_f in self.mesh_collections:
             v_rot = rotate_vertices(self.geom[key_v], r)
             v_plot = apply_display_transform(v_rot, self.ddisp)
-            self.add_mesh(v_plot, self.geom[key_f], color, alpha)
+            coll.set_verts(faces_to_polys(v_plot, self.geom[key_f]))
 
-        if self.use_degrees:
-            roll_d = wrap_to_180(math.degrees(roll))
-            pitch_d = wrap_to_180(math.degrees(pitch))
-            yaw_d = wrap_to_180(math.degrees(yaw))
+        def fmt(r, p, y):
+            return (f"  R:{wrap_to_180(math.degrees(r)):+7.2f}"
+                    f"  P:{wrap_to_180(math.degrees(p)):+7.2f}"
+                    f"  Y:{wrap_to_180(math.degrees(y)):+7.2f} deg")
 
-            info_str = (
-                "SOURCE TEMPS REEL\n\n"
-                f"source active : {active_source}\n"
-                f"derniere maj  : {last_source_used}\n\n"
-                f"imu count     : {imu_count}\n"
-                f"odom count    : {odom_count}\n\n"
-                f"frame_id      : {last_frame_id}\n"
-                f"stamp         : {last_stamp_sec}.{last_stamp_nanosec:09d}\n\n"
-                f"roll  phi     : {roll_d:+8.2f} deg\n"
-                f"pitch theta   : {pitch_d:+8.2f} deg\n"
-                f"yaw   psi     : {yaw_d:+8.2f} deg\n\n"
-                "R = Rz(yaw) * Ry(pitch) * Rx(roll)"
-            )
-        else:
-            info_str = (
-                "SOURCE TEMPS REEL\n\n"
-                f"source active : {active_source}\n"
-                f"derniere maj  : {last_source_used}\n\n"
-                f"imu count     : {imu_count}\n"
-                f"odom count    : {odom_count}\n\n"
-                f"frame_id      : {last_frame_id}\n"
-                f"stamp         : {last_stamp_sec}.{last_stamp_nanosec:09d}\n\n"
-                f"roll          : {roll:+.4f} rad\n"
-                f"pitch         : {pitch:+.4f} rad\n"
-                f"yaw           : {yaw:+.4f} rad\n"
-            )
+        active_label = f"[{active_mode}] {MODES[active_mode].strip()}"
+        info_str = (
+            f"IMU: {imu_count} msgs   EKF: {ekf_count} msgs\n"
+            f"modele 3D : {active_label}\n\n"
+            f"[1] NED raw  (VN-100)\n{fmt(ned1_r, ned1_p, ned1_y)}\n\n"
+            f"[2] ENU      (-> EKF)\n{fmt(enu2_r, enu2_p, enu2_y)}\n\n"
+            f"[3] ENU EKF  (filtered)\n{fmt(enu3_r, enu3_p, enu3_y)}\n\n"
+            f"[4] NED LQR  (-> LQR)\n{fmt(ned4_r, ned4_p, ned4_y)}"
+        )
 
         help_str = (
             "Clavier\n"
-            "I : source IMU\n"
-            "O : source ODOM (EKF)\n"
-            "T : toggle IMU/ODOM\n"
+            "1 : NED raw  (VN-100)\n"
+            "2 : ENU -> EKF\n"
+            "3 : EKF ENU\n"
+            "4 : NED -> LQR\n"
             "ESC : quitter"
         )
 
         self.info_text.set_text(info_str)
         self.help_text.set_text(help_str)
 
-        self.fig.canvas.draw_idle()
+        self.fig.canvas.draw()
 
 
 def main(args=None):
@@ -504,10 +485,12 @@ def main(args=None):
     spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
     spin_thread.start()
 
-    # FuncAnimation runs in the main thread — safe for Tk/matplotlib
-    anim = animation.FuncAnimation(node.fig, node.update_plot, interval=50, cache_frame_data=False)
+    # Canvas timer fires update_plot() in the Tk main thread — safe for matplotlib
+    timer = node.fig.canvas.new_timer(interval=50)
+    timer.add_callback(node.update_plot)
+    timer.start()
 
-    plt.show()
+    plt.show()  # blocks and runs the Tk event loop
 
     if rclpy.ok():
         rclpy.shutdown()

@@ -15,9 +15,6 @@ alias asuqtr-build='cd /workspace && bash build.sh && source install/setup.bash'
 # Desktop mode: IMU only (no Bar30 / DVL / GPIO / Actuators)
 alias asuqtr-launch='ros2 launch sub_launch desktop.launch.yaml'
 
-# Desktop mode with IMU+DVL EKF profile (if DVL is connected)
-alias asuqtr-launch-dvl='ros2 launch sub_launch desktop.launch.yaml ekf_config_file:=$(ros2 pkg prefix sub_control)/share/sub_control/config/robot_localization_imu_dvl.yaml'
-
 # Full system launch (Xavier only — all hardware nodes)
 alias asuqtr-launch-full='ros2 launch sub_launch sub.launch.yaml'
 
@@ -91,9 +88,8 @@ asuqtr-help() {
     echo "    asuqtr-build                   Build & source the workspace"
     echo ""
     echo "  LAUNCH"
-    echo "    asuqtr-launch                  Desktop: IMU only (default)"
-    echo "    asuqtr-launch-dvl              Desktop: IMU + DVL"
-    echo "    asuqtr-launch-full             Xavier: full system"
+    echo "    asuqtr-launch                  Desktop: IMU only"
+    echo "    asuqtr-launch-full             Xavier: full system (all hardware)"
     echo ""
     echo "  LQR CONTROLLER"
     echo "    asuqtr-motors                  Thruster forces in Newtons (/thruster_cmd)"
@@ -110,7 +106,7 @@ asuqtr-help() {
     echo "  IMU / VISUALISATION"
     echo "    asuqtr-imu                     Raw VectorNav IMU (/vectornav/imu)"
     echo "    asuqtr-ekf-orient              EKF orientation quaternion"
-    echo "    asuqtr-dashboard               Dashboard 3D sous-marin (IMU ou EKF, toggle I/O/T)"
+    echo "    asuqtr-dashboard               Dashboard 3D sous-marin (touches 1/2/3/4 = NED raw / ENU IMU / EKF ENU / NED LQR)"
     echo ""
     echo "  COMMANDS"
     echo "    asuqtr-target x y z r p y      Send target pose (m / degrees, lqr_tuning mode)"

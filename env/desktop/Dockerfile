@@ -54,7 +54,15 @@ RUN bash -c "source /opt/ros/humble/setup.bash && colcon build --cmake-args -DBU
 WORKDIR /workspace
 
 COPY requirements_desktop.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
+RUN pip3 install --no-cache-dir --upgrade -r /tmp/requirements.txt && \
+    rm -rf /usr/lib/python3/dist-packages/matplotlib \
+           /usr/lib/python3/dist-packages/matplotlib-*.egg-info \
+           /usr/lib/python3/dist-packages/matplotlib-*.dist-info \
+           /usr/lib/python3/dist-packages/matplotlib-*.pth \
+           /usr/lib/python3/dist-packages/mpl_toolkits
+
+# Force pip packages before system packages so matplotlib>=3.7 takes precedence over apt's 3.5
+ENV PYTHONPATH=/usr/local/lib/python3.10/dist-packages:$PYTHONPATH
 
 # Source ROS + workspace + aliases in every interactive terminal (docker exec bash)
 RUN echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc && \
