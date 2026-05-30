@@ -51,8 +51,14 @@ alias asuqtr-odom='ros2 topic echo /odometry/filtered'
 
 # --------------- IMU MONITORING ----------------------------------------------
 
-# Raw VectorNav IMU data
-alias asuqtr-imu='ros2 topic echo /vectornav/IMU'
+# Raw VectorNav IMU data (orientation quaternion + angular velocity)
+alias asuqtr-imu='ros2 topic echo /vectornav/imu'
+
+# EKF output orientation (quaternion)
+alias asuqtr-ekf-orient='ros2 topic echo /odometry/filtered --field pose.pose.orientation'
+
+# 3D visual dashboard: submarine model in NED frame, toggle IMU/EKF with I/O/T keys
+alias asuqtr-dashboard='ros2 run sub_control imu_realtime_dashboard.py'
 
 # --------------- COMMANDS ----------------------------------------------------
 
@@ -101,8 +107,10 @@ asuqtr-help() {
     echo "    asuqtr-vel                     Linear velocities (m/s)"
     echo "    asuqtr-odom                    Full odometry"
     echo ""
-    echo "  IMU"
-    echo "    asuqtr-imu                     Raw VectorNav data"
+    echo "  IMU / VISUALISATION"
+    echo "    asuqtr-imu                     Raw VectorNav IMU (/vectornav/imu)"
+    echo "    asuqtr-ekf-orient              EKF orientation quaternion"
+    echo "    asuqtr-dashboard               Dashboard 3D sous-marin (IMU ou EKF, toggle I/O/T)"
     echo ""
     echo "  COMMANDS"
     echo "    asuqtr-target x y z r p y      Send target pose (m / degrees, lqr_tuning mode)"

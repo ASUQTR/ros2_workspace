@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-rosdep \
         python3-vcstool \
         python3-pip \
+        python3-tk \
         git \
         build-essential \
         libserial-dev \
