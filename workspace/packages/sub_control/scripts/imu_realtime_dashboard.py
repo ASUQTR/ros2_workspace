@@ -8,6 +8,7 @@ matplotlib.use("TkAgg")
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 import rclpy
@@ -266,8 +267,6 @@ class ImuRealtimeDashboard(Node):
             10
         )
 
-        self.plot_timer = self.create_timer(0.05, self.update_plot)
-
         self.get_logger().info(f"Dashboard pret.")
         self.get_logger().info(f"IMU topic  : {self.imu_topic}")
         self.get_logger().info(f"Odom topic : {self.odom_topic}")
@@ -405,7 +404,7 @@ class ImuRealtimeDashboard(Node):
     def set_axis_line(self, line, p1):
         line.set_data_3d([0, p1[0]], [0, p1[1]], [0, p1[2]])
 
-    def update_plot(self):
+    def update_plot(self, frame=None):
         with self.lock:
             roll = self.roll
             pitch = self.pitch
@@ -428,17 +427,16 @@ class ImuRealtimeDashboard(Node):
         self.set_axis_line(self.hB_y, yb)
         self.set_axis_line(self.hB_z, zb)
 
-        self.tB_x.remove()
-        self.tB_y.remove()
-        self.tB_z.remove()
-
         px = xb * 1.06
         py = yb * 1.06
         pz = zb * 1.06
 
-        self.tB_x = self.ax.text(px[0], px[1], px[2], "x_b forward", color="red", fontsize=11, fontweight="bold")
-        self.tB_y = self.ax.text(py[0], py[1], py[2], "y_b right", color="green", fontsize=11, fontweight="bold")
-        self.tB_z = self.ax.text(pz[0], pz[1], pz[2], "z_b down", color="orange", fontsize=11, fontweight="bold")
+        self.tB_x.set_position((px[0], px[1]))
+        self.tB_x.set_3d_properties(px[2], zdir='z')
+        self.tB_y.set_position((py[0], py[1]))
+        self.tB_y.set_3d_properties(py[2], zdir='z')
+        self.tB_z.set_position((pz[0], pz[1]))
+        self.tB_z.set_3d_properties(pz[2], zdir='z')
 
         self.clear_model()
 
@@ -505,6 +503,9 @@ def main(args=None):
 
     spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
     spin_thread.start()
+
+    # FuncAnimation runs in the main thread — safe for Tk/matplotlib
+    anim = animation.FuncAnimation(node.fig, node.update_plot, interval=50, cache_frame_data=False)
 
     plt.show()
 

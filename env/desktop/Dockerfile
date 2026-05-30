@@ -56,8 +56,11 @@ WORKDIR /workspace
 COPY requirements_desktop.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 
-# Auto-source ASUQTR aliases when a terminal opens in the container
-RUN echo '[ -f /workspace/asuqtr_aliases.sh ] && source /workspace/asuqtr_aliases.sh' >> ~/.bashrc
+# Source ROS + workspace + aliases in every interactive terminal (docker exec bash)
+RUN echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc && \
+    echo 'source /opt/underlay_ws/install/setup.bash' >> ~/.bashrc && \
+    echo '[ -f /workspace/install/setup.bash ] && source /workspace/install/setup.bash' >> ~/.bashrc && \
+    echo '[ -f /workspace/asuqtr_aliases.sh ] && source /workspace/asuqtr_aliases.sh' >> ~/.bashrc
 
 COPY ros_entrypoint.sh /
 RUN chmod +x /ros_entrypoint.sh
