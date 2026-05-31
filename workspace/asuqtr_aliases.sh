@@ -57,6 +57,7 @@ alias asuqtr-ekf-orient='ros2 topic echo /odometry/filtered --field pose.pose.or
 # 3D visual dashboard: submarine model in NED frame, toggle IMU/EKF with I/O/T keys
 alias asuqtr-dashboard='ros2 run sub_control imu_realtime_dashboard.py'
 
+
 # --------------- COMMANDS ----------------------------------------------------
 
 # Send a target pose to the controller (requires control_mode: lqr_tuning in params.yaml)
@@ -106,7 +107,7 @@ asuqtr-help() {
     echo "  IMU / VISUALISATION"
     echo "    asuqtr-imu                     Raw VectorNav IMU (/vectornav/imu)"
     echo "    asuqtr-ekf-orient              EKF orientation quaternion"
-    echo "    asuqtr-dashboard               Dashboard 3D sous-marin (touches 1/2/3/4 = NED raw / ENU IMU / EKF ENU / NED LQR)"
+    echo "    asuqtr-dashboard               Dashboard 3D sous-marin (1/2/3/4 = NED raw / ENU IMU / EKF ENU / NED LQR, U = NED/ENU toggle)"
     echo ""
     echo "  COMMANDS"
     echo "    asuqtr-target x y z r p y      Send target pose (m / degrees, lqr_tuning mode)"

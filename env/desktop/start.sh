@@ -12,13 +12,17 @@ echo -e "[\033[0;36m INFO \033[0m] All host devices are accessible (IMU, DVL, et
 # Allow the container to open GUI windows on the host display
 xhost +local:docker > /dev/null 2>&1 || true
 
+touch ~/.docker_ros2_history
+
 docker run -it --rm \
   --privileged \
   -v /dev:/dev \
   --group-add dialout \
   --net=host \
   -e DISPLAY=$DISPLAY \
+  -e HISTFILE=/root/.bash_history \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
   -v $(pwd)/workspace:/workspace \
+  -v ~/.docker_ros2_history:/root/.bash_history \
   --name ros2-desktop \
   ros2-humble
