@@ -1,0 +1,116 @@
+ekf_filter_node:
+  ros__parameters:
+    frequency: 40.0
+    sensor_timeout: 0.00
+    two_d_mode: false
+    transform_time_offset: 0.0
+    transform_timeout: 0.0
+    print_diagnostics: true
+    debug: false
+    publish_tf: true
+    publish_acceleration: false
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    # -----------------------------------------------------------
+    # Sensor 0: VectorNav VN-100 (sensor_msgs/msg/Imu)
+    # -----------------------------------------------------------
+    imu0: vectornav/imu
+
+    # [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+    imu0_config: [false, false, false,
+                  true,  true,  true,
+                  false, false, false,
+                  true,  true,  true,
+                  false, false, false]
+
+    imu0_nodelay: false
+    imu0_differential: false
+    imu0_relative: false
+    imu0_queue_size: 20
+    imu0_remove_gravitational_acceleration: false
+
+    # -----------------------------------------------------------
+    # Sensor 1: Doppler Velocity Log (geometry_msgs/msg/TwistWithCovarianceStamped)
+    # -----------------------------------------------------------
+    twist0: dvl/velocities
+
+    # [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+    twist0_config: [false, false, false,
+                   false, false, false,
+                   true,  true,  true,
+                   false, false, false,
+                   false, false, false]
+
+    twist0_differential: false
+    twist0_relative: false
+    twist0_queue_size: 5
+
+    # -----------------------------------------------------------
+    # Sensor 2: Bar30 depth sensor (nav_msgs/msg/Odometry)
+    # -----------------------------------------------------------
+    odom0: depth
+
+    # [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+    odom0_config: [false, false, true,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+
+    odom0_differential: false
+    odom0_relative: false
+    odom0_queue_size: 3
+
+    # -----------------------------------------------------------
+    # Covariance Matrices (Jean's tuning)
+    # Reference: https://dsp.stackexchange.com/questions/89660
+    # -----------------------------------------------------------
+    dynamic_process_noise_covariance: true
+
+    process_noise_covariance: [
+      0.000125,    0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,          0.0,          0.0,          0.0,          0.0,          0.0,
+      0.0,         0.000125,    0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,          0.0,          0.0,          0.0,          0.0,          0.0,
+      0.0,         0.0,         0.000125,    0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,          0.0,          0.0,          0.0,          0.0,          0.0,
+      0.0,         0.0,         0.0,         0.00021817,  0.0,         0.0,         0.0,         0.0,         0.0,         0.0,          0.0,          0.0,          0.0,          0.0,          0.0,
+      0.0,         0.0,         0.0,         0.0,         0.00021817,  0.0,         0.0,         0.0,         0.0,         0.0,          0.0,          0.0,          0.0,          0.0,          0.0,
+      0.0,         0.0,         0.0,         0.0,         0.0,         0.00021817,  0.0,         0.0,         0.0,         0.0,          0.0,          0.0,          0.0,          0.0,          0.0,
+      0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.00025,     0.0,         0.0,         0.0,          0.0,          0.0,          0.0,          0.0,          0.0,
+      0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.00025,     0.0,         0.0,          0.0,          0.0,          0.0,          0.0,          0.0,
+      0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0005,      0.0,          0.0,          0.0,          0.0,          0.0,          0.0,
+      0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0000021817, 0.0,          0.0,          0.0,          0.0,          0.0,
+      0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,          0.000043633,  0.0,          0.0,          0.0,          0.0,
+      0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,          0.0,          0.00021817,   0.0,          0.0,          0.0,
+      0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,          0.0,          0.0,          0.000125,     0.0,          0.0,
+      0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,          0.0,          0.0,          0.0,          0.000125,     0.0,
+      0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,         0.0,          0.0,          0.0,          0.0,          0.0,          0.000025
+    ]
+
+    initial_estimate_covariance: [
+      1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  1e-2, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  1e-2, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  1e-1, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9
+    ]
+
+    initial_state: [
+      0.0,  0.0,  -0.3,         # x, y, z (z initialisé à profondeur typique du bar30)
+      0.0,  0.0,   0.0,         # roll, pitch, yaw (aligner sur le nord magnétique)
+      0.0,  0.0,   0.0,         # vx, vy, vz
+      0.0,  0.0,   0.0,         # vroll, vpitch, vyaw
+      0.0,  0.0,   0.0          # ax, ay, az
+    ]
