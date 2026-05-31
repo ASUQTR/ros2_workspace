@@ -7,7 +7,7 @@ RUN rm -f /etc/apt/sources.list.d/ros*.list && \
     echo "deb [arch=arm64 signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu focal main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
     
 # 2. Install standard system/pip dependencies first
-RUN apt-get update && apt-get install -y python3-pip libserial-dev python3-vcstool && apt-get clean
+RUN apt-get update && apt-get install -y python3-pip libserial-dev python3-vcstool python3-tk && apt-get clean
 
 # 3. Create a separate workspace strictly for 3rd party packages
 RUN mkdir -p /opt/underlay_ws/src
@@ -31,7 +31,7 @@ RUN source /opt/ros/humble/install/setup.bash && colcon build --cmake-args -DBUI
 
 # 4. Copy the CURRENT state of source code into the image. This is only to get ROS2 package.xml & python requirements.txt files
 WORKDIR /workspace
-COPY ./src ./src
+COPY ./packages ./src
 COPY requirements_xavier.txt /workspace/
 
 # 5. Install python dependencies & let rosdep read the copied package.xml files and install system packages
@@ -43,7 +43,8 @@ RUN apt-get update && \
 # 6. Automatically source ROS2 base workspaces in new terminals
 RUN echo "source /opt/ros/humble/install/setup.bash" >> ~/.bashrc
 RUN echo "source /opt/underlay_ws/install/setup.bash" >> ~/.bashrc
-RUN echo "source /workspace/install/setup.bash" >> ~/.bashrc
+RUN echo '[ -f /workspace/install/setup.bash ] && source /workspace/install/setup.bash' >> ~/.bashrc
+RUN echo '[ -f /workspace/asuqtr_aliases.sh ] && source /workspace/asuqtr_aliases.sh' >> ~/.bashrc
 
 # 7. Apply performance fix for control node's lqr math libraries.
 # This fix is applied here because its specific to the underlying BLAS libraries
@@ -53,4 +54,9 @@ RUN echo "export OPENBLAS_NUM_THREADS=1" >> ~/.bashrc
 RUN echo "export OMP_NUM_THREADS=1" >> ~/.bashrc
 RUN echo "export MKL_NUM_THREADS=1" >> ~/.bashrc
 RUN echo "export NUMEXPR_NUM_THREADS=1" >> ~/.bashrc
+
+COPY ros_entrypoint.sh /
+RUN chmod +x /ros_entrypoint.sh
+ENTRYPOINT ["/ros_entrypoint.sh"]
+CMD ["bash"]
 
