@@ -456,6 +456,22 @@ class ControlNode(Node):
                 self.current_state, lqr_error, self.q_matrix, self.r_matrix, self.inv_r_matrix
             )
 
+            frozen = self.lqr_solver.frozen_gain_count
+            max_frozen = self.lqr_solver.max_frozen_cycles
+            if frozen > max_frozen:
+                self.get_logger().error(
+                    f"ARE solver failed for {frozen} consecutive cycle(s): "
+                    f"frozen gain limit ({max_frozen}) exceeded, zeroing thrust. "
+                    f"pitch={math.degrees(self.current_state[4]):.1f} deg",
+                    throttle_duration_sec=1.0
+                )
+            elif frozen > 0:
+                self.get_logger().warn(
+                    f"ARE solver failed: using frozen gain for {frozen}/{max_frozen} cycle(s). "
+                    f"pitch={math.degrees(self.current_state[4]):.1f} deg",
+                    throttle_duration_sec=1.0
+                )
+
             # Enforce physical actuator limits in software (per thruster, Newtons).
             thrusters_force = np.clip(
                 thrusters_force,
