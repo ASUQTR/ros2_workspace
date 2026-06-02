@@ -364,7 +364,7 @@ class ActuatorNode(Node):
         if self.thrusters_need_init:
             return
         
-        efforts = np.asarray(msg.efforts, dtype=np.float64)
+        efforts = np.clip(np.asarray(msg.efforts, dtype=np.float64), -14.4, 14.4)
 
         if self.use_flat_thruster_mapping:
             # Temporary debug mode: ignore the non-linear curve and use a flat gain.
