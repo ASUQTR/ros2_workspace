@@ -31,7 +31,7 @@ RUN source /opt/ros/humble/install/setup.bash && colcon build --cmake-args -DBUI
 
 # 4. Copy the CURRENT state of source code into the image. This is only to get ROS2 package.xml & python requirements.txt files
 WORKDIR /workspace
-COPY ./src ./src
+COPY ./workspace ./src
 COPY requirements_xavier.txt /workspace/
 
 # 5. Install python dependencies & let rosdep read the copied package.xml files and install system packages
