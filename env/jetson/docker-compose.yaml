@@ -17,6 +17,7 @@ services:
       - /tmp/argus_socket:/tmp/argus_socket
       - /dev:/dev
       - ./:/workspace
+      - ../../workspace/packages:/workspace/src
 
   # ==========================================
   # 2. ASUQTR DASHBOARD
