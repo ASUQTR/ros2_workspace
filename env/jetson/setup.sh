@@ -154,7 +154,7 @@ git lfs install --skip-repo
 echo "Deploying Sub container infrastructure..."
 
 # Build ASUQTR ROS2 docker image (control/autonomy/hardware ros2 packages etc.)
-docker build -t asuqtr_ros2:latest .
+docker build -t asuqtr_ros2:latest -f ./env/jetson/Dockerfile .
 
 # Build ASUQTR Dashboard docker image
 # 1. Define the target directory clearly
