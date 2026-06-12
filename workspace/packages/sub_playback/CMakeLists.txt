@@ -1,36 +1,33 @@
 cmake_minimum_required(VERSION 3.8)
-project(sub_interfaces)
+project(sub_playback)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# find dependencies
+# Find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
-find_package(std_msgs REQUIRED)
-find_package(geometry_msgs REQUIRED)
-find_package(sensor_msgs REQUIRED)
+find_package(ament_cmake_python REQUIRED)
+find_package(rclpy REQUIRED)
+find_package(rclpy REQUIRED)
 
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/ThrusterCommand.msg"
-  "msg/LedCommand.msg"
-  "srv/Playback.srv"
-  "srv/SonarScan.srv"
-  "action/Control.action"
-  DEPENDENCIES std_msgs geometry_msgs sensor_msgs
+
+# 1. Install your Python module (the directory containing your __init__.py)
+ament_python_install_package(${PROJECT_NAME})
+
+# 2. Install your Python executable scripts (your ROS 2 nodes)
+# This assumes your executable scripts are in a 'scripts' folder, 
+# or you can point directly to the python files inside your module.
+install(PROGRAMS
+  scripts/playback_node.py
+  DESTINATION lib/${PROJECT_NAME}
 )
 
-if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  # the following line skips the linter which checks for copyrights
-  # comment the line when a copyright and license is added to all source files
-  set(ament_cmake_copyright_FOUND TRUE)
-  # the following line skips cpplint (only works in a git repo)
-  # comment the line when this package is in a git repo and when
-  # a copyright and license is added to all source files
-  set(ament_cmake_cpplint_FOUND TRUE)
-  ament_lint_auto_find_test_dependencies()
-endif()
+# 3. Install your launch files, param files, and other data
+# This is where the magic happens for --symlink-install
+install(DIRECTORY
+  config
+  DESTINATION share/${PROJECT_NAME}
+)
 
 ament_package()
