@@ -6,8 +6,8 @@ services:
     # TODO add docker repository prefix to image when repository server available
     image: asuqtr_ros2:latest
     build:
-      context: ./env/desktop
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: env/jetson/Dockerfile
     container_name: asuqtr_ros2
     privileged: true
     network_mode: "host"
@@ -18,7 +18,7 @@ services:
     volumes:
       - /tmp/argus_socket:/tmp/argus_socket
       - /dev:/dev
-      - ./:/workspace
+      - ../../workspace:/workspace
       - ../../workspace/packages:/workspace/src
 
   # ==========================================

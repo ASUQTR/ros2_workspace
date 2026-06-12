@@ -10,11 +10,11 @@ Welcome to the core ROS 2 workspace for the ASUQTR submarine. This repository co
 ASUQTR's ROS2 software architecture contains 5 ROS2 packages, following a typical layered architecture patern :
 > [!TIP]
 > Click the sub package links to go to their README.md and get further details and specifications
-* [`sub_hardware`](src/sub_hardware/)
-* [`sub_control`](src/sub_control/)
-* [`sub_autonomy`](src/sub_autonomy/)
-* [`sub_interfaces`](src/sub_interfaces/)
-* [`sub_launch`](src/sub_launch/)
+* [`sub_hardware`](workspace/packages/sub_hardware/)
+* [`sub_control`](workspace/packages/sub_control/)
+* [`sub_autonomy`](workspace/packages/sub_autonomy/)
+* [`sub_interfaces`](workspace/packages/sub_interfaces/)
+* [`sub_launch`](workspace/packages/sub_launch/)
 
 
 In the following architecture diagram, __BLACK__ icons are ASUQTR nodes/custom code, while __WHITE__ icons are standard ROS2 packages.
@@ -69,12 +69,12 @@ You now have a full IDE and integrated terminals directly inside the ROS 2 envir
 </a>
 
 1. SSH log into the Jetson Xavier.  [See these instructions](#ssh)
-2. Clone this repo via SSH on the in the `$HOME` directory
-3. `cd` into the repo and run `setup_xavier.sh`. This will setup ssd, docker, jetson IO permissions, etc. and deploy ASUQTR infrastructure.
+2. Clone this repo via SSH. It can live inside a larger working folder; the scripts resolve paths relative to the repo.
+3. `cd` into the repo and run `env/jetson/setup.sh`. This will setup ssd, docker, jetson IO permissions, etc. and deploy ASUQTR infrastructure.
     ```bash
     # While logged into a Jetson Xavier over SSH
-    cd ~/ros2_workspace
-    sudo ./setup_jetson.sh
+    cd /path/to/ros2_workspace
+    sudo ./env/jetson/setup.sh
     ```
 4. Reboot the jetson xavier
 
@@ -83,7 +83,7 @@ You now have a full IDE and integrated terminals directly inside the ROS 2 envir
 For software development and simulation, we use Docker. The included `docker-compose.yaml` file in this repository allows to spin up the ROS 2 development container alongside the ASUQTR web dashboard.
 ### 🐳📦 Starting ASUQTR containers
 > [!WARNING]
-> If you ran the `setup_xavier.sh` script from [1. Install](#install) step, the containers have already been started with a a `unless-stopped` policy, which means they will always on Xavier power up, unless you explicitely stop them with in a terminal
+> If you ran the `env/jetson/setup.sh` script from [1. Install](#install) step, the containers have already been started with a a `unless-stopped` policy, which means they will always on Xavier power up, unless you explicitely stop them with in a terminal
 
 1. To verify if both the `asuqtr_ros2` and `asuqtr-dashboard` containers are running:
    ```bash
@@ -165,4 +165,4 @@ ros2 topic pub -1 /debug/target_pose geometry_msgs/msg/PoseStamped "{pose: {posi
 ```
 
 > [!IMPORTANT]
-> This command is only available if the `control_node` is in `lqr_tuning` mode! See `src/sub_control/config/params.yaml`
+> This command is only available if the `control_node` is in `lqr_tuning` mode! See `workspace/packages/sub_control/config/params.yaml`
