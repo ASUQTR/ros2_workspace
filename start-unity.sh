@@ -15,7 +15,7 @@ if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
   exit 1
 fi
 
-ROS_ENV='source /opt/ros/humble/setup.bash; source /opt/underlay_ws/install/setup.bash 2>/dev/null || true; source /workspace/install/setup.bash'
+ROS_ENV='export OPENBLAS_NUM_THREADS=1; export OMP_NUM_THREADS=1; export MKL_NUM_THREADS=1; export NUMEXPR_NUM_THREADS=1; source /opt/ros/humble/setup.bash; source /opt/underlay_ws/install/setup.bash 2>/dev/null || true; source /workspace/install/setup.bash'
 
 if ! docker exec "$CONTAINER" bash -lc 'test -f /workspace/install/setup.bash'; then
   echo "Container '$CONTAINER' is running, but /workspace/install/setup.bash is missing."

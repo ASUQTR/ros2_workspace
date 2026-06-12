@@ -445,8 +445,10 @@ class ControlNode(Node):
         # --- Execute Control ---
         if self._current_mode in [ControlMode.BEHAVIOR, ControlMode.LQR_TUNING]:
             
-            # Native vectorized math to calculate the error
-            lqr_error = target_state_copy - self.current_state
+            # LQR convention: x_error = current - target, then u = -K * x_error.
+            # Using target - current here flips the feedback sign and drives the
+            # sub away from the target.
+            lqr_error = self.current_state - target_state_copy
             
             # Crucial: Wrap Roll/Pitch/Yaw errors so the sub doesn't aggressively spin 360 degrees
             lqr_error[3:6] = self.wrap_angles_to_pi(lqr_error[3:6])
