@@ -110,13 +110,14 @@ class GPIONode(Node):
         )
 
         # PWM Disable (/OE Pin on PCA9685)
-        # Initial state is False (LOW), meaning PWM is ENABLED by default.
+        # Initial state is True (HIGH), meaning PWM is DISABLED by default.
+        # The kill switch state is read after interrupt registration to enable if magnet is present.
         self.disable_pwms_pin = self.declare_parameter('disable_pwms_pin', DEF_DISABLE_PWM_PIN).value
-        GPIO.setup(self.disable_pwms_pin, GPIO.OUT, initial=False) 
+        GPIO.setup(self.disable_pwms_pin, GPIO.OUT, initial=True)
         self.disable_pwm_sub = self.create_subscription(
-            Bool, 
-            'disable_pwm', 
-            self.disable_pwm_callback, 
+            Bool,
+            'disable_pwm',
+            self.disable_pwm_callback,
             latched_qos,
             callback_group=self.gpio_cb_group
         )
@@ -134,6 +135,10 @@ class GPIONode(Node):
         GPIO.setup(self.kill_switch_pin, GPIO.IN)
         # add_event_detect triggers the callback automatically on RISING or FALLING edges (BOTH)
         GPIO.add_event_detect(self.kill_switch_pin, GPIO.BOTH, callback=self.handle_kill_switch_event, bouncetime=debounce)
+
+        # Apply the current physical state immediately — the interrupt only fires on changes,
+        # so without this read the /OE pin would stay disabled even if the magnet is already in.
+        self.handle_kill_switch_event(self.kill_switch_pin)
         
         # Magnetic Switch 2 Setup
         self.mag_switch2_pin = self.declare_parameter('magnetic_switch2_pin', DEF_MAG_SWITCH2_PIN).value
