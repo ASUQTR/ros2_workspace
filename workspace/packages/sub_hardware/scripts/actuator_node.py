@@ -477,6 +477,8 @@ def main(args=None):
     except KeyboardInterrupt:
         node.get_logger().info('Keyboard interrupt detected, shutting down...')
     finally:
+        for thruster in node.thrusters:
+            thruster.throttle = 0.0
         executor.shutdown()
         node.destroy_node()
         rclpy.try_shutdown()
