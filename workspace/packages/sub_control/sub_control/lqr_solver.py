@@ -167,6 +167,16 @@ class SubLQRSolver:
         self.system_dynamics_matrix = np.zeros((12, 12), dtype=np.float32)
         # +1.0 keeps current damping sign, -1.0 flips all damping diagonal terms.
         self.damping_sign = 1.0
+        # Last gain matrix successfully computed by the ARE solver.
+        # Used as a fallback if the solver fails at a given operating point.
+        self._last_valid_k_gain = None
+        # Number of consecutive control cycles where the cached gain was used
+        # instead of a freshly solved one. Exposed for the ROS node to log.
+        self.frozen_gain_count = 0
+        # Maximum consecutive cycles allowed on a frozen gain before zeroing thrust.
+        # At 25 Hz, 25 cycles = 1 second — enough to ride a transient, short enough
+        # to avoid running on a gain computed far from the current operating point.
+        self.max_frozen_cycles = 25
 
     def set_damping_sign(self, sign: float):
         """
@@ -388,16 +398,51 @@ class SubLQRSolver:
         """
         # 1. Update the A matrix with the current physics based on live velocities
         a_matrix = self.update_system_dynamics_matrix_A(self.system_dynamics_matrix, state)
-        
-        # 2. Solve the Continuous Algebraic Riccati Equation (ARE)
-        # This is computationally heavy but solvable in real-time on a Jetson Xavier.
-        # It finds the 'X' matrix that minimizes the infinite-horizon cost function.
-        x_matrix = scipy.linalg.solve_continuous_are(a_matrix, Bm, q_matrix, r_matrix)
-        
-        # 3. Compute the Optimal Gain Matrix (K)
-        # K = R^-1 * B^T * X
-        k_gain = np.dot(inv_r_matrix, np.dot(Bm.T, x_matrix))
-        
+
+        # Guard 1: Non-finite entries in A (e.g. cos_pitch -> 0 at pitch = ±90°
+        # causes row 5 entries to blow up). The ARE solver produces undefined
+        # results with inf/NaN inputs without necessarily raising an exception.
+        if not np.all(np.isfinite(a_matrix)):
+            return self._apply_frozen_gain(state_error)
+
+        try:
+            # 2. Solve the Continuous Algebraic Riccati Equation (ARE)
+            # This is computationally heavy but solvable in real-time on a Jetson Xavier.
+            # It finds the 'X' matrix that minimizes the infinite-horizon cost function.
+            x_matrix = scipy.linalg.solve_continuous_are(a_matrix, Bm, q_matrix, r_matrix)
+
+            # 3. Compute the Optimal Gain Matrix (K)
+            # K = R^-1 * B^T * X
+            k_gain = np.dot(inv_r_matrix, np.dot(Bm.T, x_matrix))
+
+            # Guard 2: ARE returned without raising but produced non-finite K.
+            # Happens when the Hamiltonian has near-imaginary eigenvalues and the
+            # QZ decomposition is poorly conditioned.
+            if not np.all(np.isfinite(k_gain)):
+                return self._apply_frozen_gain(state_error)
+
+        except scipy.linalg.LinAlgError:
+            # Raised when the stable subspace of the Hamiltonian cannot be isolated
+            # (system not stabilizable / not detectable at this operating point).
+            return self._apply_frozen_gain(state_error)
+
+        # Successful solve: cache the gain and reset the freeze counter.
+        self._last_valid_k_gain = k_gain
+        self.frozen_gain_count = 0
+
         # 4. Compute optimal control effort (u = -Kx)
         # Where 'x' is the state error. We negate it to drive the error to zero.
         return -np.dot(k_gain, state_error)
+
+    def _apply_frozen_gain(self, state_error: np.ndarray) -> np.ndarray:
+        """
+        Apply the last known-good gain when the ARE solver fails.
+
+        Returns zero thrust if no valid gain has ever been computed, or if the
+        frozen gain has been in use for more than max_frozen_cycles consecutive
+        cycles (operating point has drifted too far from where K was computed).
+        """
+        self.frozen_gain_count += 1
+        if self._last_valid_k_gain is None or self.frozen_gain_count > self.max_frozen_cycles:
+            return np.zeros(8, dtype=np.float64)
+        return -np.dot(self._last_valid_k_gain, state_error)
