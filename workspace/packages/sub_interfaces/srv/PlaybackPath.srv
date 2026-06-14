@@ -1,0 +1,4 @@
+string file_path
+uint8 idx
+---
+int16[3] position

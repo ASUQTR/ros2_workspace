@@ -7,9 +7,12 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
 
 from nav_msgs.msg import Odometry
 
-from sub_interfaces.srv import Playback
+from sub_interfaces.srv import PlaybackRecording, PlaybackPath
 
 class PlaybackNode(Node):
+    # Parameters
+    waypoint_timing = 5.0  # seconds
+
     waypoints: list[tuple[float, float, float]] = []
     last_clock = None
     is_playback_running = False
@@ -19,9 +22,9 @@ class PlaybackNode(Node):
         self.get_logger().info('PlaybackNode has been started.')
 
         self.playback_service = self.create_service(
-            Playback,
-            'playback',
-            self.handle_playback
+            PlaybackRecording,
+            'playback_recording',
+            self.handle_playback_recording
         )
 
         only_latest_qos = QoSProfile(
@@ -36,10 +39,10 @@ class PlaybackNode(Node):
             callback_group=self.localization_cb_group
         )
 
-    def handle_playback(self, request, response):
-        self.get_logger().info(f'Playback request received: start={request.start}')
+    def handle_playback_recording(self, request, response):
+        self.get_logger().info(f'Playback request received: start_recording={request.start_recording}')
         
-        if request.start:
+        if request.start_recording:
             self.start_playback()
             response.success = 1
         else:
