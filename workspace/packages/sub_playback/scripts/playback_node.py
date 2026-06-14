@@ -75,11 +75,11 @@ class PlaybackNode(Node):
         self.get_logger().info(f'Playback request received: start_recording={request.start_recording}')
         
         if request.start_recording:
-            self.start_playback()
+            self.start_recording()
             response.success = 1
         else:
             # Stop and dump waypoints to a uniquely named json file based on node clock
-            self.stop_playback()
+            self.stop_recording()
 
             now_msg = self.get_clock().now().to_msg()
             filename = f'/tmp/waypoints_{now_msg.sec}_{now_msg.nanosec}.json'
@@ -124,12 +124,12 @@ class PlaybackNode(Node):
             response.angles = [0.0, 0.0, 0.0]
         return response
     
-    def start_playback(self):
+    def start_recording(self):
         self.get_logger().info('Starting playback...')
         self.last_clock = self.get_clock().now()
         self.is_playback_running = True
 
-    def stop_playback(self):
+    def stop_recording(self):
         self.get_logger().info('Stopping playback...')
         self.last_clock = None
         self.is_playback_running = False
