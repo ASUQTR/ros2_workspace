@@ -125,6 +125,7 @@ namespace vectornav {
 
     /// Publishers
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_raw_pub_;
     rclcpp::Publisher<vectornav_msgs::msg::CommonGroup>::SharedPtr pub_common_;
     rclcpp::Publisher<vectornav_msgs::msg::TimeGroup>::SharedPtr pub_time_;
     rclcpp::Publisher<vectornav_msgs::msg::ImuGroup>::SharedPtr pub_imu_;

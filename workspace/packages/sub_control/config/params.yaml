@@ -17,7 +17,7 @@ control_node:
     thruster_cost_matrix: [15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0]
 
     # Hard software saturation for each thruster command in Newtons.
-    max_thruster_force_newton: 40.0
+    max_thruster_force_newton: 14.4
 
     # Determines the minimum % at which joystick are detected.
     # 0.1 means 10% of the joystick will be ignored

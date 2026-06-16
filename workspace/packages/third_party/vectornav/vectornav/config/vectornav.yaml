@@ -28,8 +28,8 @@ vectornav:
     BO1:
       asyncMode: 1                   # ASYNCMODE_BOTH
       rateDivisor: 8                # 200 Hz
-      # commonField value 0x0030 means Bit 4 (EKF filtered Quaternions) + Bit 5 (EKF filtered Angular Rate)
-      commonField: 0x0030
+      # commonField value 0x0230 means Bit 4 (EKF filtered Quaternions) + Bit 5 (EKF filtered Angular Rate) + Bit 9 (Raw IMU accel & gyro)
+      commonField: 0x0230
       timeField: 0x0000              # TIMEGROUP_NONE
       imuField: 0x0000               # IMUGROUP_NONE
       # attitudeField value 0x0040 means Bit 6 (LinearAccelBody - Gravity Removed)
@@ -59,6 +59,16 @@ vectornav:
       insField: 0x0000               # INSGROUP_NONE
       gps2Field: 0x0000              # GPSGROUP_NONE
     frame_id: "vectornav_imu"
+    # Acceleration Compensation (Register 25, section 6.2.2)
+    # C is a 3x3 scale/misalignment matrix (row-major), B is the bias offset vector (m/s^2).
+    # Default is identity matrix + zero bias. Adjust C[2][2] to fix Z-axis scale factor.
+    # Z scale factor: Az_expected = sqrt(g^2 - Ax^2 - Ay^2) = sqrt(9.806^2 - 0.2925^2 - 0.5584^2) = 9.7862
+    # C[2][2] = 9.7862 / 10.8336 = 0.9033  (tilt-corrected, more accurate than naive 9.806/10.833)
+    accelCompensation:
+      C: [1.0, 0.0, 0.0,
+          0.0, 1.0, 0.0,
+          0.0, 0.0, 0.9033]
+      B: [0.0, 0.0, 0.0]
 
 vn_sensor_msgs:
   ros__parameters:

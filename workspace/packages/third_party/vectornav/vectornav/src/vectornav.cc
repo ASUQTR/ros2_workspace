@@ -144,6 +144,14 @@ Vectornav::Vectornav(const rclcpp::NodeOptions & options) : Node("vectornav", op
   /// GPS Antenna A Offset (8.2.2)
   /// GPS Compass Baseline (8.2.3)
 
+  // Acceleration Compensation (Register 25, section 6.2.2)
+  // Default is identity + zero bias (no correction). Override via YAML accelCompensation.C / .B
+  declare_parameter<std::vector<double>>("accelCompensation.C",
+    {1.0, 0.0, 0.0,
+     0.0, 1.0, 0.0,
+     0.0, 0.0, 1.0});
+  declare_parameter<std::vector<double>>("accelCompensation.B", {0.0, 0.0, 0.0});
+
   // Message Header
   declare_parameter<std::string>("frame_id", "vectornav");
 
@@ -153,6 +161,7 @@ Vectornav::Vectornav(const rclcpp::NodeOptions & options) : Node("vectornav", op
   
   // Add standard IMU publisher:
   imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("vectornav/imu", 10);
+  imu_raw_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("vectornav/imu_raw", 10);
   pub_time_ = this->create_publisher<vectornav_msgs::msg::TimeGroup>("vectornav/raw/time", 10);
   pub_imu_ = this->create_publisher<vectornav_msgs::msg::ImuGroup>("vectornav/raw/imu", 10);
   pub_gps_ = this->create_publisher<vectornav_msgs::msg::GpsGroup>("vectornav/raw/gps", 10);
@@ -656,6 +665,19 @@ bool Vectornav::configure_sensor()
   // 5.2.13
   vs_->writeBinaryOutput3(boConfigs.at(2));
 
+  // Acceleration Compensation (Register 25, section 6.2.2)
+  {
+    auto C = get_parameter("accelCompensation.C").as_double_array();
+    auto B = get_parameter("accelCompensation.B").as_double_array();
+    vn::math::mat3f accelC(C[0], C[1], C[2],
+                           C[3], C[4], C[5],
+                           C[6], C[7], C[8]);
+    vn::math::vec3f accelB(B[0], B[1], B[2]);
+    vs_->writeAccelerationCompensation(accelC, accelB);
+    RCLCPP_INFO(get_logger(), "Accel compensation C[2][2] = %.4f, B = (%.4f, %.4f, %.4f)",
+      C[8], B[0], B[1], B[2]);
+  }
+
   // Verify that the device family is capable of supporting GPS
   if (vs_->determineDeviceFamily() != vn::sensors::VnSensor::VnSensor_Family_Vn100) {
     try {
@@ -832,6 +854,36 @@ imu_msg.linear_acceleration_covariance = {
 };
   // Publish
   node->imu_pub_->publish(imu_msg);
+
+  // Publish raw (uncompensated) IMU data
+  if (cd.hasAccelerationUncompensated() || cd.hasAngularRateUncompensated())
+  {
+    sensor_msgs::msg::Imu raw_msg;
+    raw_msg.header.stamp = timestamp;
+    raw_msg.header.frame_id = node->get_parameter("frame_id").as_string();
+    raw_msg.orientation = imu_msg.orientation;
+    raw_msg.orientation_covariance = imu_msg.orientation_covariance;
+
+    if (cd.hasAngularRateUncompensated())
+    {
+      vn::math::vec3f gyro = cd.angularRateUncompensated();
+      raw_msg.angular_velocity.x = gyro[0];
+      raw_msg.angular_velocity.y = -gyro[1];
+      raw_msg.angular_velocity.z = -gyro[2];
+    }
+    raw_msg.angular_velocity_covariance = imu_msg.angular_velocity_covariance;
+
+    if (cd.hasAccelerationUncompensated())
+    {
+      vn::math::vec3f accel = cd.accelerationUncompensated();
+      raw_msg.linear_acceleration.x = accel[0];
+      raw_msg.linear_acceleration.y = -accel[1];
+      raw_msg.linear_acceleration.z = -accel[2];
+    }
+    raw_msg.linear_acceleration_covariance = imu_msg.linear_acceleration_covariance;
+
+    node->imu_raw_pub_->publish(raw_msg);
+  }
 }
 
 //
