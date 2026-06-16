@@ -1,7 +1,7 @@
 # config/control_params.yaml
 control_node:
   ros__parameters:
-    # Execution Mode: 'behavior', 'lqr_tuning', or 'manual'
+    # Execution Mode: 'behavior', 'lqr_tuning', 'manual', or 'manual_assisted'
     control_mode: "lqr_tuning"
     
     # Q MATRIX (State Error Cost): Penalizes being away from the target.
@@ -23,3 +23,21 @@ control_node:
     # 0.1 means 10% of the joystick will be ignored
     # Increase the value if your joysticks are loose and cause unwanted movements
     joy_dead_zone: 0.2
+
+    # Prototype MANUAL_ASSISTED mode:
+    # joystick -> bounded target "carrot" -> LQR -> thrusters.
+    manual_assisted:
+      default_depth_target: 0.5
+      min_depth_target: 0.2
+      max_depth_target: 1.0
+      depth_step: 0.1
+      max_depth_offset: 0.25
+      max_carrot_distance: 0.35
+      max_carrot_speed: 0.35
+      max_forward_speed: 0.5
+      max_strafe_speed: 0.0
+      max_yaw_rate: 0.6
+      max_roll_deg: 20.0
+      max_pitch_deg: 15.0
+      joystick_curve: 1.6
+      gamepad_timeout_sec: 0.75

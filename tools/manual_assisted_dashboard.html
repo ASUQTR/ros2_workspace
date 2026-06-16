@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ASUQTR Manual Assisted Dashboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #eee;
+    }
+    body {
+      margin: 0;
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 16px;
+    }
+    .panel {
+      background: #1b1b1b;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 14px;
+    }
+    h1, h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+    h2 {
+      font-size: 15px;
+      color: #bbb;
+    }
+    label {
+      display: block;
+      margin-top: 10px;
+      color: #bbb;
+      font-size: 13px;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 4px;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #111;
+      color: #eee;
+    }
+    button {
+      margin-top: 12px;
+      width: 100%;
+      padding: 10px;
+      border: 0;
+      border-radius: 6px;
+      background: #3d7cff;
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.stop {
+      background: #d43b3b;
+    }
+    .status {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 13px;
+    }
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #777;
+      align-self: center;
+    }
+    .ok { background: #35c46a; }
+    .bad { background: #d43b3b; }
+    .warn { background: #d6a83d; }
+    pre {
+      margin: 10px 0 0;
+      padding: 10px;
+      background: #101010;
+      border-radius: 6px;
+      overflow: auto;
+      font-size: 12px;
+      min-height: 160px;
+    }
+    .camera-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .camera img {
+      width: 100%;
+      min-height: 260px;
+      object-fit: contain;
+      background: #050505;
+      border-radius: 8px;
+      border: 1px solid #333;
+    }
+    .help {
+      line-height: 1.45;
+      color: #ccc;
+      font-size: 13px;
+    }
+    @media (max-width: 900px) {
+      body {
+        grid-template-columns: 1fr;
+      }
+      .camera-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <section class="panel">
+    <h1>Manual Assisted</h1>
+
+    <label>Jetson IP</label>
+    <input id="jetsonIp" value="192.168.0.10">
+
+    <label>rosbridge URL</label>
+    <input id="rosbridgeUrl" value="ws://192.168.0.10:9090">
+
+    <label>camera base URL</label>
+    <input id="cameraUrl" value="http://192.168.0.10:6969">
+
+    <button id="connectBtn">Connect</button>
+    <button id="armBtn">Send Start / Arm</button>
+    <button id="stopBtn" class="stop">Send Select / Stop</button>
+
+    <div class="status"><span>rosbridge</span><span id="rosDot" class="dot bad"></span></div>
+    <div class="status"><span>gamepad</span><span id="gamepadDot" class="dot bad"></span></div>
+    <div class="status"><span>publishing /dashboard/gamepad</span><span id="pubDot" class="dot warn"></span></div>
+
+    <h2 style="margin-top:16px;">Mapping</h2>
+    <div class="help">
+      Left stick Y: avance / recul<br>
+      Left stick X: yaw<br>
+      RT / LT: profondeur temporaire<br>
+      X / B: roll<br>
+      A / Y: pitch<br>
+      Select: stop PWM<br>
+      Start: start / arm
+    </div>
+
+    <pre id="debug">Waiting...</pre>
+  </section>
+
+  <section class="panel">
+    <h1>Cameras</h1>
+    <div class="camera-grid">
+      <div class="camera">
+        <h2>Camera 1</h2>
+        <img id="cam1" alt="camera 1">
+      </div>
+      <div class="camera">
+        <h2>Camera 2</h2>
+        <img id="cam2" alt="camera 2">
+      </div>
+    </div>
+  </section>
+
+  <script>
+    const joyTopic = "/dashboard/gamepad";
+    let ws = null;
+    let publishTimer = null;
+    let lastJoy = null;
+
+    const rosDot = document.getElementById("rosDot");
+    const gamepadDot = document.getElementById("gamepadDot");
+    const pubDot = document.getElementById("pubDot");
+    const debug = document.getElementById("debug");
+
+    function setDot(dot, status) {
+      dot.className = "dot " + status;
+    }
+
+    function nowStamp() {
+      const ms = Date.now();
+      return {
+        sec: Math.floor(ms / 1000),
+        nanosec: (ms % 1000) * 1000000
+      };
+    }
+
+    function advertiseJoy() {
+      send({
+        op: "advertise",
+        topic: joyTopic,
+        type: "sensor_msgs/msg/Joy"
+      });
+    }
+
+    function send(obj) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      ws.send(JSON.stringify(obj));
+    }
+
+    function connect() {
+      const ip = document.getElementById("jetsonIp").value.trim();
+      const rosUrl = document.getElementById("rosbridgeUrl").value.trim() || `ws://${ip}:9090`;
+      const camBase = document.getElementById("cameraUrl").value.trim() || `http://${ip}:6969`;
+
+      document.getElementById("rosbridgeUrl").value = rosUrl;
+      document.getElementById("cameraUrl").value = camBase;
+      document.getElementById("cam1").src = `${camBase}/video_feed1`;
+      document.getElementById("cam2").src = `${camBase}/video_feed2`;
+
+      if (ws) {
+        ws.close();
+      }
+
+      ws = new WebSocket(rosUrl);
+      ws.onopen = () => {
+        setDot(rosDot, "ok");
+        advertiseJoy();
+      };
+      ws.onclose = () => {
+        setDot(rosDot, "bad");
+        setDot(pubDot, "warn");
+      };
+      ws.onerror = () => {
+        setDot(rosDot, "bad");
+      };
+    }
+
+    function buttonValue(gp, index) {
+      const button = gp.buttons[index];
+      if (!button) return 0;
+      return button.pressed ? 1 : 0;
+    }
+
+    function triggerAxis(gp, index) {
+      const button = gp.buttons[index];
+      const value = button ? button.value : 0;
+      return 1 - 2 * value;
+    }
+
+    function readGamepad() {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      const gp = Array.from(pads).find(Boolean);
+      if (!gp) {
+        setDot(gamepadDot, "bad");
+        return null;
+      }
+
+      setDot(gamepadDot, "ok");
+
+      const leftX = gp.axes[0] || 0;
+      const leftY = -(gp.axes[1] || 0);
+      const rightX = gp.axes[2] || 0;
+      const rightY = -(gp.axes[3] || 0);
+
+      // Match the axis layout expected by control_node.py:
+      // axes[0]=left X, axes[1]=left Y, axes[2]=LT as ROS joy axis,
+      // axes[3]=right X, axes[4]=right Y, axes[5]=RT as ROS joy axis.
+      const axes = [
+        leftX,
+        leftY,
+        triggerAxis(gp, 6),
+        rightX,
+        rightY,
+        triggerAxis(gp, 7)
+      ];
+
+      // Match the button layout expected by control_node.py:
+      // A=0, B=1, X=2, Y=3, Select/Back=6, Start=7.
+      const buttons = new Array(12).fill(0);
+      buttons[0] = buttonValue(gp, 0);
+      buttons[1] = buttonValue(gp, 1);
+      buttons[2] = buttonValue(gp, 2);
+      buttons[3] = buttonValue(gp, 3);
+      buttons[4] = buttonValue(gp, 4);
+      buttons[5] = buttonValue(gp, 5);
+      buttons[6] = buttonValue(gp, 8);
+      buttons[7] = buttonValue(gp, 9);
+
+      return {
+        header: {
+          stamp: nowStamp(),
+          frame_id: ""
+        },
+        axes,
+        buttons
+      };
+    }
+
+    function publishJoy(msg) {
+      send({
+        op: "publish",
+        topic: joyTopic,
+        msg
+      });
+      lastJoy = msg;
+      setDot(pubDot, ws && ws.readyState === WebSocket.OPEN ? "ok" : "warn");
+    }
+
+    function sendSynthetic(buttonIndex) {
+      const msg = readGamepad() || {
+        header: { stamp: nowStamp(), frame_id: "" },
+        axes: [0, 0, 1, 0, 0, 1],
+        buttons: new Array(12).fill(0)
+      };
+      msg.buttons = msg.buttons.slice();
+      msg.buttons[buttonIndex] = 1;
+      publishJoy(msg);
+      setTimeout(() => {
+        msg.header.stamp = nowStamp();
+        msg.buttons[buttonIndex] = 0;
+        publishJoy(msg);
+      }, 120);
+    }
+
+    function loop() {
+      const joy = readGamepad();
+      if (joy) {
+        publishJoy(joy);
+      }
+
+      const gp = navigator.getGamepads ? Array.from(navigator.getGamepads()).find(Boolean) : null;
+      debug.textContent = JSON.stringify({
+        connected: Boolean(ws && ws.readyState === WebSocket.OPEN),
+        gamepad: gp ? gp.id : null,
+        joy: lastJoy
+      }, null, 2);
+    }
+
+    document.getElementById("connectBtn").addEventListener("click", connect);
+    document.getElementById("armBtn").addEventListener("click", () => sendSynthetic(7));
+    document.getElementById("stopBtn").addEventListener("click", () => sendSynthetic(6));
+
+    window.addEventListener("gamepadconnected", () => setDot(gamepadDot, "ok"));
+    window.addEventListener("gamepaddisconnected", () => setDot(gamepadDot, "bad"));
+
+    publishTimer = setInterval(loop, 50);
+  </script>
+</body>
+</html>

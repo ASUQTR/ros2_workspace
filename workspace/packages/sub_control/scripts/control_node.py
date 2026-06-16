@@ -36,6 +36,7 @@ from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Joy
 from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Bool
 from sub_interfaces.msg import ThrusterCommand
 from sub_interfaces.action import Control
 import tf2_ros
@@ -53,6 +54,20 @@ DEFAULT_R = [10.0, 10.0, 1000.0, 1000.0, 1000.0, 1000.0, 10.0, 10.0]
 DEFAULT_MAX_THRUSTER_FORCE = 14.4
 DEFAULT_MAX_THROTTLE = 0.8
 DEFAULT_JOY_DEAD_ZONE = 0.1
+DEFAULT_MANUAL_ASSISTED_DEPTH = 0.5
+DEFAULT_MANUAL_ASSISTED_MIN_DEPTH = 0.2
+DEFAULT_MANUAL_ASSISTED_MAX_DEPTH = 3.0
+DEFAULT_MANUAL_ASSISTED_DEPTH_STEP = 0.1
+DEFAULT_MANUAL_ASSISTED_MAX_DEPTH_OFFSET = 0.25
+DEFAULT_MANUAL_ASSISTED_MAX_CARROT_DISTANCE = 0.35
+DEFAULT_MANUAL_ASSISTED_MAX_CARROT_SPEED = 0.35
+DEFAULT_MANUAL_ASSISTED_MAX_FORWARD_SPEED = 0.5
+DEFAULT_MANUAL_ASSISTED_MAX_STRAFE_SPEED = 0.0
+DEFAULT_MANUAL_ASSISTED_MAX_YAW_RATE = 0.6
+DEFAULT_MANUAL_ASSISTED_MAX_ROLL_DEG = 20.0
+DEFAULT_MANUAL_ASSISTED_MAX_PITCH_DEG = 15.0
+DEFAULT_MANUAL_ASSISTED_JOYSTICK_CURVE = 1.6
+DEFAULT_MANUAL_ASSISTED_GAMEPAD_TIMEOUT = 0.75
 
 # ==========================================
 # ENUMS
@@ -65,10 +80,12 @@ class ControlMode(IntEnum):
         BEHAVIOR: Fully autonomous. Listens to Action Server goals.
         LQR_TUNING: Debug mode. Listens to simple pose topics (e.g., from RViz).
         MANUAL: Human override. Listens to Gamepad joystick inputs.
+        MANUAL_ASSISTED: Human piloting through bounded LQR target generation.
     """
     BEHAVIOR = 0
     LQR_TUNING = 1
     MANUAL = 2
+    MANUAL_ASSISTED = 3
 
 # ==========================================
 # NODE DEFINITION
@@ -104,12 +121,51 @@ class ControlNode(Node):
         self.declare_parameter('debug_invert_yaw', False)
         self.declare_parameter('damping_sign', 1.0)
         self.declare_parameter('max_thruster_force_newton', DEFAULT_MAX_THRUSTER_FORCE)
+        self.declare_parameter('manual_assisted.default_depth_target', DEFAULT_MANUAL_ASSISTED_DEPTH)
+        self.declare_parameter('manual_assisted.min_depth_target', DEFAULT_MANUAL_ASSISTED_MIN_DEPTH)
+        self.declare_parameter('manual_assisted.max_depth_target', DEFAULT_MANUAL_ASSISTED_MAX_DEPTH)
+        self.declare_parameter('manual_assisted.depth_step', DEFAULT_MANUAL_ASSISTED_DEPTH_STEP)
+        self.declare_parameter('manual_assisted.max_depth_offset', DEFAULT_MANUAL_ASSISTED_MAX_DEPTH_OFFSET)
+        self.declare_parameter('manual_assisted.max_carrot_distance', DEFAULT_MANUAL_ASSISTED_MAX_CARROT_DISTANCE)
+        self.declare_parameter('manual_assisted.max_carrot_speed', DEFAULT_MANUAL_ASSISTED_MAX_CARROT_SPEED)
+        self.declare_parameter('manual_assisted.max_forward_speed', DEFAULT_MANUAL_ASSISTED_MAX_FORWARD_SPEED)
+        self.declare_parameter('manual_assisted.max_strafe_speed', DEFAULT_MANUAL_ASSISTED_MAX_STRAFE_SPEED)
+        self.declare_parameter('manual_assisted.max_yaw_rate', DEFAULT_MANUAL_ASSISTED_MAX_YAW_RATE)
+        self.declare_parameter('manual_assisted.max_roll_deg', DEFAULT_MANUAL_ASSISTED_MAX_ROLL_DEG)
+        self.declare_parameter('manual_assisted.max_pitch_deg', DEFAULT_MANUAL_ASSISTED_MAX_PITCH_DEG)
+        self.declare_parameter('manual_assisted.joystick_curve', DEFAULT_MANUAL_ASSISTED_JOYSTICK_CURVE)
+        self.declare_parameter('manual_assisted.gamepad_timeout_sec', DEFAULT_MANUAL_ASSISTED_GAMEPAD_TIMEOUT)
 
         # PERFORMANCE ARCHITECTURE: Pre-allocate State Arrays
         # Initializing with NaN ensures the LQR math functions won't 
         # accidentally process empty zero-data before the first localization message arrives.
         self.current_state = np.full(12, np.nan, dtype=np.float64)
         self.target_state = np.full(12, np.nan, dtype=np.float64) 
+        self.manual_assisted_carrot_body = np.zeros(2, dtype=np.float64)
+        self.manual_assisted_default_depth_target = DEFAULT_MANUAL_ASSISTED_DEPTH
+        self.manual_assisted_min_depth_target = DEFAULT_MANUAL_ASSISTED_MIN_DEPTH
+        self.manual_assisted_max_depth_target = DEFAULT_MANUAL_ASSISTED_MAX_DEPTH
+        self.manual_assisted_depth_step = DEFAULT_MANUAL_ASSISTED_DEPTH_STEP
+        self.manual_assisted_max_depth_offset = DEFAULT_MANUAL_ASSISTED_MAX_DEPTH_OFFSET
+        self.manual_assisted_max_carrot_distance = DEFAULT_MANUAL_ASSISTED_MAX_CARROT_DISTANCE
+        self.manual_assisted_max_carrot_speed = DEFAULT_MANUAL_ASSISTED_MAX_CARROT_SPEED
+        self.manual_assisted_max_forward_speed = DEFAULT_MANUAL_ASSISTED_MAX_FORWARD_SPEED
+        self.manual_assisted_max_strafe_speed = DEFAULT_MANUAL_ASSISTED_MAX_STRAFE_SPEED
+        self.manual_assisted_max_yaw_rate = DEFAULT_MANUAL_ASSISTED_MAX_YAW_RATE
+        self.manual_assisted_max_roll = math.radians(DEFAULT_MANUAL_ASSISTED_MAX_ROLL_DEG)
+        self.manual_assisted_max_pitch = math.radians(DEFAULT_MANUAL_ASSISTED_MAX_PITCH_DEG)
+        self.manual_assisted_joystick_curve = DEFAULT_MANUAL_ASSISTED_JOYSTICK_CURVE
+        self.manual_assisted_gamepad_timeout = DEFAULT_MANUAL_ASSISTED_GAMEPAD_TIMEOUT
+        self.manual_assisted_base_depth_target = DEFAULT_MANUAL_ASSISTED_DEPTH
+        self.manual_assisted_depth_target = DEFAULT_MANUAL_ASSISTED_DEPTH
+        self.manual_assisted_yaw_target = 0.0
+        self.manual_assisted_last_update_time = None
+        self.manual_assisted_last_gamepad_time = None
+        self.last_depth_up_button_state = False
+        self.last_depth_down_button_state = False
+        self.last_hold_button_state = False
+        self.software_kill_active = False
+        self._last_mode_for_transition = None
 
         # Load initial parameters
         mode_str = self.get_parameter('control_mode').value.lower()
@@ -123,6 +179,25 @@ class ControlNode(Node):
         self.debug_invert_yaw = bool(self.get_parameter('debug_invert_yaw').value)
         self.damping_sign = float(self.get_parameter('damping_sign').value)
         self.max_thruster_force_newton = float(self.get_parameter('max_thruster_force_newton').value)
+        self.manual_assisted_default_depth_target = float(self.get_parameter('manual_assisted.default_depth_target').value)
+        self.manual_assisted_min_depth_target = float(self.get_parameter('manual_assisted.min_depth_target').value)
+        self.manual_assisted_max_depth_target = float(self.get_parameter('manual_assisted.max_depth_target').value)
+        self.manual_assisted_depth_step = float(self.get_parameter('manual_assisted.depth_step').value)
+        self.manual_assisted_max_depth_offset = float(self.get_parameter('manual_assisted.max_depth_offset').value)
+        self.manual_assisted_max_carrot_distance = float(self.get_parameter('manual_assisted.max_carrot_distance').value)
+        self.manual_assisted_max_carrot_speed = float(self.get_parameter('manual_assisted.max_carrot_speed').value)
+        self.manual_assisted_max_forward_speed = float(self.get_parameter('manual_assisted.max_forward_speed').value)
+        self.manual_assisted_max_strafe_speed = float(self.get_parameter('manual_assisted.max_strafe_speed').value)
+        self.manual_assisted_max_yaw_rate = float(self.get_parameter('manual_assisted.max_yaw_rate').value)
+        self.manual_assisted_max_roll = math.radians(float(self.get_parameter('manual_assisted.max_roll_deg').value))
+        self.manual_assisted_max_pitch = math.radians(float(self.get_parameter('manual_assisted.max_pitch_deg').value))
+        self.manual_assisted_joystick_curve = float(self.get_parameter('manual_assisted.joystick_curve').value)
+        self.manual_assisted_gamepad_timeout = float(self.get_parameter('manual_assisted.gamepad_timeout_sec').value)
+        self.manual_assisted_depth_target = self._clamp(
+            self.manual_assisted_default_depth_target,
+            self.manual_assisted_min_depth_target,
+            self.manual_assisted_max_depth_target
+        )
         
         # Bind dynamic reconfigure callback
         self.add_on_set_parameters_callback(self.parameter_callback)
@@ -166,6 +241,11 @@ class ControlNode(Node):
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
             durability=QoSDurabilityPolicy.VOLATILE
         )
+        latched_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL
+        )
 
         self.localization_sub = self.create_subscription(
             Odometry, 'odometry/filtered', self.localization_callback, only_latest_qos,
@@ -185,6 +265,9 @@ class ControlNode(Node):
         self.thruster_pub = self.create_publisher(
             ThrusterCommand, 'thruster_cmd', only_latest_qos
         )
+        self.disable_pwm_pub = self.create_publisher(
+            Bool, 'disable_pwm', latched_qos
+        )
         self.lqr_debug_pub = self.create_publisher(
             Float64MultiArray, 'debug/lqr_angles', only_latest_qos
         )
@@ -196,6 +279,9 @@ class ControlNode(Node):
         )
         self.lqr_dynamics_pub = self.create_publisher(
             Float64MultiArray, 'debug/lqr_dynamics', only_latest_qos
+        )
+        self.manual_assisted_debug_pub = self.create_publisher(
+            Float64MultiArray, 'debug/manual_assisted', only_latest_qos
         )
 
         # --- Action Server ---
@@ -211,7 +297,11 @@ class ControlNode(Node):
             f"LQR dynamics debug pub: {self.publish_lqr_dynamics_debug} | "
             f"invert R/P/Y: {self.debug_invert_roll}/{self.debug_invert_pitch}/{self.debug_invert_yaw} | "
                         f"damping_sign: {self.damping_sign} | "
-                        f"max_thruster_force_newton: {self.max_thruster_force_newton}"
+                        f"max_thruster_force_newton: {self.max_thruster_force_newton} | "
+                        f"manual_assisted depth/carrot/yaw: "
+                        f"{self.manual_assisted_depth_target:.2f}m/"
+                        f"{self.manual_assisted_max_carrot_distance:.2f}m/"
+                        f"{self.manual_assisted_max_yaw_rate:.2f}rad/s"
         )
 
 
@@ -276,6 +366,8 @@ class ControlNode(Node):
                 self.max_thruster_force_newton = float(param.value)
                 self.get_logger().info(f"Max thruster force set to: +/-{self.max_thruster_force_newton} N")
                 return SetParametersResult(successful=True)
+            elif param.name.startswith('manual_assisted.'):
+                return self._set_manual_assisted_parameter(param)
 
         # TODO handle multi params. Right now first handled param returns from this callback
         return SetParametersResult(successful=False, reason=f'Unhandled parameters :{params}')
@@ -296,9 +388,15 @@ class ControlNode(Node):
             self._current_mode = ControlMode.LQR_TUNING
         elif mode_str == 'manual':
             self._current_mode = ControlMode.MANUAL
+        elif mode_str == 'manual_assisted':
+            self._current_mode = ControlMode.MANUAL_ASSISTED
         else:
             self.get_logger().warn(f"Unknown control mode: {mode_str}")
             return False
+        if hasattr(self, '_last_mode_for_transition') and self._last_mode_for_transition != self._current_mode:
+            if self._current_mode == ControlMode.MANUAL_ASSISTED:
+                self._initialize_manual_assisted_targets()
+            self._last_mode_for_transition = self._current_mode
         self.get_logger().info(f"SUB Control mode set as: {self._current_mode.name}")
         return True
     
@@ -437,13 +535,20 @@ class ControlNode(Node):
                 self.get_logger().info("Initializing target_state to current position (zero velocity).")
                 self.target_state[0:6] = self.current_state[0:6]
                 self.target_state[6:12] = 0.0 # Force target velocities to 0 for station-keeping
+
+            if self._current_mode == ControlMode.MANUAL_ASSISTED:
+                self._apply_manual_assisted_timeout()
                 
             # Copy to local thread-safe variable for math below so the Action Server
             # doesn't overwrite the memory addresses mid-calculation.
             target_state_copy = self.target_state.copy()
+
+        if self.software_kill_active:
+            self._publish_zero_thrust()
+            return
         
         # --- Execute Control ---
-        if self._current_mode in [ControlMode.BEHAVIOR, ControlMode.LQR_TUNING]:
+        if self._current_mode in [ControlMode.BEHAVIOR, ControlMode.LQR_TUNING, ControlMode.MANUAL_ASSISTED]:
             
             # LQR convention: x_error = current - target, then u = -K * x_error.
             # Using target - current here flips the feedback sign and drives the
@@ -581,16 +686,33 @@ class ControlNode(Node):
             msg (Joy): The incoming gamepad state.
         """
         # Extracting axis, button and data
-        button_a = msg.buttons[0]  
-        button_b = msg.buttons[1]  
-        button_start = msg.buttons[7]  
-        left_stick_x = msg.axes[0]  
-        left_stick_y = msg.axes[1]  
-        right_stick_x = msg.axes[3]  
-        right_stick_y = -msg.axes[4]  
-        triggers_axis = (msg.axes[2] - msg.axes[5]) / 2  
+        button_a = self._button(msg, 0)
+        button_b = self._button(msg, 1)
+        button_x = self._button(msg, 2)
+        button_y = self._button(msg, 3)
+        button_select = self._button(msg, 6)
+        button_start = self._button(msg, 7)
+        left_stick_x = self._axis(msg, 0)
+        left_stick_y = self._axis(msg, 1)
+        right_stick_x = self._axis(msg, 3)
+        right_stick_y = -self._axis(msg, 4)
+        triggers_axis = (self._axis(msg, 2, 1.0) - self._axis(msg, 5, 1.0)) / 2.0
+
+        if button_select:
+            self._activate_software_kill()
+            return
 
         if self._is_mode_switch_requested(button_start):
+            return
+
+        if self._current_mode == ControlMode.MANUAL_ASSISTED:
+            self._manual_assisted_gamepad_update(
+                forward_cmd=left_stick_y,
+                yaw_cmd=left_stick_x,
+                vertical_cmd=-triggers_axis,
+                roll_cmd=float(button_b) - float(button_x),
+                pitch_cmd=float(button_a) - float(button_y)
+            )
             return
         
         if self._current_mode != ControlMode.MANUAL:
@@ -714,6 +836,304 @@ class ControlNode(Node):
         if np.any(np.abs(position_errors) > pos_tolerance) or np.any(np.abs(angle_errors) > angle_tolerance):
             return False
         return True
+
+    def _set_manual_assisted_parameter(self, param):
+        """Update one manual assisted tuning parameter at runtime."""
+        try:
+            value = float(param.value)
+        except (TypeError, ValueError):
+            return SetParametersResult(successful=False, reason=f'{param.name} must be numeric')
+
+        if param.name == 'manual_assisted.default_depth_target':
+            self.manual_assisted_default_depth_target = value
+        elif param.name == 'manual_assisted.min_depth_target':
+            self.manual_assisted_min_depth_target = value
+        elif param.name == 'manual_assisted.max_depth_target':
+            self.manual_assisted_max_depth_target = value
+        elif param.name == 'manual_assisted.depth_step':
+            if value <= 0.0:
+                return SetParametersResult(successful=False, reason='manual_assisted.depth_step must be > 0.0')
+            self.manual_assisted_depth_step = value
+        elif param.name == 'manual_assisted.max_depth_offset':
+            if value < 0.0:
+                return SetParametersResult(successful=False, reason='manual_assisted.max_depth_offset must be >= 0.0')
+            self.manual_assisted_max_depth_offset = value
+        elif param.name == 'manual_assisted.max_carrot_distance':
+            if value <= 0.0:
+                return SetParametersResult(successful=False, reason='manual_assisted.max_carrot_distance must be > 0.0')
+            self.manual_assisted_max_carrot_distance = value
+        elif param.name == 'manual_assisted.max_carrot_speed':
+            if value <= 0.0:
+                return SetParametersResult(successful=False, reason='manual_assisted.max_carrot_speed must be > 0.0')
+            self.manual_assisted_max_carrot_speed = value
+        elif param.name == 'manual_assisted.max_forward_speed':
+            if value < 0.0:
+                return SetParametersResult(successful=False, reason='manual_assisted.max_forward_speed must be >= 0.0')
+            self.manual_assisted_max_forward_speed = value
+        elif param.name == 'manual_assisted.max_strafe_speed':
+            if value < 0.0:
+                return SetParametersResult(successful=False, reason='manual_assisted.max_strafe_speed must be >= 0.0')
+            self.manual_assisted_max_strafe_speed = value
+        elif param.name == 'manual_assisted.max_yaw_rate':
+            if value < 0.0:
+                return SetParametersResult(successful=False, reason='manual_assisted.max_yaw_rate must be >= 0.0')
+            self.manual_assisted_max_yaw_rate = value
+        elif param.name == 'manual_assisted.max_roll_deg':
+            if value < 0.0:
+                return SetParametersResult(successful=False, reason='manual_assisted.max_roll_deg must be >= 0.0')
+            self.manual_assisted_max_roll = math.radians(value)
+        elif param.name == 'manual_assisted.max_pitch_deg':
+            if value < 0.0:
+                return SetParametersResult(successful=False, reason='manual_assisted.max_pitch_deg must be >= 0.0')
+            self.manual_assisted_max_pitch = math.radians(value)
+        elif param.name == 'manual_assisted.joystick_curve':
+            if value < 1.0:
+                return SetParametersResult(successful=False, reason='manual_assisted.joystick_curve must be >= 1.0')
+            self.manual_assisted_joystick_curve = value
+        elif param.name == 'manual_assisted.gamepad_timeout_sec':
+            if value <= 0.0:
+                return SetParametersResult(successful=False, reason='manual_assisted.gamepad_timeout_sec must be > 0.0')
+            self.manual_assisted_gamepad_timeout = value
+        else:
+            return SetParametersResult(successful=False, reason=f'Unhandled parameter: {param.name}')
+
+        if self.manual_assisted_min_depth_target > self.manual_assisted_max_depth_target:
+            return SetParametersResult(
+                successful=False,
+                reason='manual_assisted.min_depth_target must be <= max_depth_target'
+            )
+        self.manual_assisted_depth_target = self._clamp(
+            self.manual_assisted_depth_target,
+            self.manual_assisted_min_depth_target,
+            self.manual_assisted_max_depth_target
+        )
+        self.manual_assisted_base_depth_target = self._clamp(
+            self.manual_assisted_base_depth_target,
+            self.manual_assisted_min_depth_target,
+            self.manual_assisted_max_depth_target
+        )
+        self._limit_manual_assisted_carrot()
+        return SetParametersResult(successful=True)
+
+    def _activate_software_kill(self):
+        """Disable PWM and zero thrusters until Start re-arms manual assisted mode."""
+        if not self.software_kill_active:
+            self.get_logger().error("SOFTWARE KILL ACTIVATED: disabling PWM and zeroing thrusters.")
+        self.software_kill_active = True
+        disable_msg = Bool()
+        disable_msg.data = True
+        self.disable_pwm_pub.publish(disable_msg)
+        self._publish_zero_thrust()
+
+    def _clear_software_kill(self):
+        """Re-enable PWM after a Select stop."""
+        if self.software_kill_active:
+            self.get_logger().warn("SOFTWARE KILL CLEARED: enabling PWM.")
+        self.software_kill_active = False
+        disable_msg = Bool()
+        disable_msg.data = False
+        self.disable_pwm_pub.publish(disable_msg)
+
+    def _publish_zero_thrust(self):
+        self.thruster_pub.publish(ThrusterCommand(efforts=[0.0] * 8))
+
+    def _initialize_manual_assisted_targets(self):
+        """Capture the current pose as the assisted piloting hold target."""
+        self.manual_assisted_carrot_body[:] = 0.0
+        self.manual_assisted_last_update_time = self._now_seconds()
+        self.manual_assisted_last_gamepad_time = self.manual_assisted_last_update_time
+
+        if np.isnan(self.current_state[0]):
+            self.manual_assisted_base_depth_target = self._clamp(
+                self.manual_assisted_default_depth_target,
+                self.manual_assisted_min_depth_target,
+                self.manual_assisted_max_depth_target
+            )
+            self.manual_assisted_depth_target = self.manual_assisted_base_depth_target
+            self.manual_assisted_yaw_target = 0.0
+            self.get_logger().warn(
+                "MANUAL_ASSISTED entered before odometry is available; using default depth target.",
+                throttle_duration_sec=2.0
+            )
+            return
+
+        self.manual_assisted_base_depth_target = self._clamp(
+            self.manual_assisted_default_depth_target,
+            self.manual_assisted_min_depth_target,
+            self.manual_assisted_max_depth_target
+        )
+        self.manual_assisted_depth_target = self.manual_assisted_base_depth_target
+        self.manual_assisted_yaw_target = self.current_state[5]
+
+        if hasattr(self, 'target_state_lock'):
+            with self.target_state_lock:
+                self.target_state[0:6] = self.current_state[0:6]
+                self.target_state[2] = self.manual_assisted_depth_target
+                self.target_state[3] = 0.0
+                self.target_state[4] = 0.0
+                self.target_state[5] = self.manual_assisted_yaw_target
+                self.target_state[6:12] = 0.0
+
+        self.get_logger().info(
+            f"MANUAL_ASSISTED armed: depth={self.manual_assisted_depth_target:.2f} m, "
+            f"yaw={math.degrees(self.manual_assisted_yaw_target):.1f} deg"
+        )
+
+    def _manual_assisted_gamepad_update(
+        self,
+        forward_cmd,
+        yaw_cmd,
+        vertical_cmd,
+        roll_cmd,
+        pitch_cmd
+    ):
+        """
+        Convert gamepad intent into a short, bounded LQR target.
+        """
+        if np.isnan(self.current_state[0]):
+            self.get_logger().warn(
+                "Ignoring MANUAL_ASSISTED gamepad command: no odometry yet.",
+                throttle_duration_sec=1.0
+            )
+            return
+
+        now = self._now_seconds()
+        if self.manual_assisted_last_update_time is None:
+            self.manual_assisted_last_update_time = now
+        dt = self._clamp(now - self.manual_assisted_last_update_time, 0.0, 0.1)
+        self.manual_assisted_last_update_time = now
+        self.manual_assisted_last_gamepad_time = now
+
+        # Pool-test POV mapping: left stick Y moves a short carrot forward/back,
+        # left stick X rotates the yaw target. The LQR still drives the thrusters.
+        forward = self._shape_joystick(forward_cmd)
+        yaw = self._shape_joystick(yaw_cmd)
+        depth_offset_cmd = self._shape_joystick(vertical_cmd)
+
+        self.manual_assisted_depth_target = (
+            self.manual_assisted_base_depth_target
+            + depth_offset_cmd * self.manual_assisted_max_depth_offset
+        )
+        self.manual_assisted_depth_target = self._clamp(
+            self.manual_assisted_depth_target,
+            self.manual_assisted_min_depth_target,
+            self.manual_assisted_max_depth_target
+        )
+
+        if forward == 0.0:
+            self.manual_assisted_carrot_body[:] = 0.0
+        else:
+            self.manual_assisted_carrot_body[0] += forward * self.manual_assisted_max_carrot_speed * dt
+            self.manual_assisted_carrot_body[1] = 0.0
+            self._limit_manual_assisted_carrot()
+
+        self.manual_assisted_yaw_target = self.wrap_angles_to_pi(np.array([
+            self.manual_assisted_yaw_target + yaw * self.manual_assisted_max_yaw_rate * dt
+        ]))[0]
+
+        with self.target_state_lock:
+            self._write_manual_assisted_target_state(
+                forward_cmd=forward,
+                strafe_cmd=0.0,
+                yaw_cmd=yaw,
+                roll_target=roll_cmd * self.manual_assisted_max_roll,
+                pitch_target=pitch_cmd * self.manual_assisted_max_pitch,
+                vertical_cmd=depth_offset_cmd
+            )
+
+    def _write_manual_assisted_target_state(
+        self,
+        forward_cmd=0.0,
+        strafe_cmd=0.0,
+        yaw_cmd=0.0,
+        roll_target=0.0,
+        pitch_target=0.0,
+        vertical_cmd=0.0
+    ):
+        """Write the current manual assisted carrot into target_state. Caller holds lock."""
+        yaw = self.current_state[5]
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
+        forward_offset = self.manual_assisted_carrot_body[0]
+        right_offset = self.manual_assisted_carrot_body[1]
+
+        north_offset = forward_offset * cos_yaw - right_offset * sin_yaw
+        east_offset = forward_offset * sin_yaw + right_offset * cos_yaw
+
+        self.target_state[0] = self.current_state[0] + north_offset
+        self.target_state[1] = self.current_state[1] + east_offset
+        self.target_state[2] = self.manual_assisted_depth_target
+        self.target_state[3] = roll_target
+        self.target_state[4] = pitch_target
+        self.target_state[5] = self.manual_assisted_yaw_target
+        self.target_state[6] = forward_cmd * self.manual_assisted_max_forward_speed
+        self.target_state[7] = strafe_cmd * self.manual_assisted_max_strafe_speed
+        self.target_state[8] = 0.0
+        self.target_state[9] = 0.0
+        self.target_state[10] = 0.0
+        self.target_state[11] = yaw_cmd * self.manual_assisted_max_yaw_rate
+
+        dbg = Float64MultiArray()
+        dbg.data = [
+            self.manual_assisted_carrot_body[0],
+            self.manual_assisted_carrot_body[1],
+            self.manual_assisted_depth_target,
+            self.manual_assisted_yaw_target,
+            self.target_state[0],
+            self.target_state[1],
+            self.target_state[2],
+            self.target_state[5],
+            forward_cmd,
+            strafe_cmd,
+            yaw_cmd,
+            vertical_cmd,
+            roll_target,
+            pitch_target
+        ]
+        self.manual_assisted_debug_pub.publish(dbg)
+
+    def _apply_manual_assisted_timeout(self):
+        """Hold position if gamepad updates stop. Caller holds target_state_lock."""
+        now = self._now_seconds()
+        last = self.manual_assisted_last_gamepad_time
+        if last is not None and (now - last) <= self.manual_assisted_gamepad_timeout:
+            return
+
+        self.manual_assisted_carrot_body[:] = 0.0
+        if not np.isnan(self.current_state[0]):
+            self.manual_assisted_yaw_target = self.current_state[5]
+            self.target_state[0:6] = self.current_state[0:6]
+            self.target_state[2] = self.manual_assisted_depth_target
+            self.target_state[3] = 0.0
+            self.target_state[4] = 0.0
+            self.target_state[5] = self.manual_assisted_yaw_target
+            self.target_state[6:12] = 0.0
+
+    def _limit_manual_assisted_carrot(self):
+        norm = float(np.linalg.norm(self.manual_assisted_carrot_body))
+        if norm > self.manual_assisted_max_carrot_distance:
+            self.manual_assisted_carrot_body *= self.manual_assisted_max_carrot_distance / norm
+
+    def _shape_joystick(self, value):
+        value = self._avoid_joystick_dead_zone(float(value))
+        if value == 0:
+            return 0.0
+        return math.copysign(abs(value) ** self.manual_assisted_joystick_curve, value)
+
+    @staticmethod
+    def _axis(msg, index, default=0.0):
+        return float(msg.axes[index]) if index < len(msg.axes) else float(default)
+
+    @staticmethod
+    def _button(msg, index):
+        return int(msg.buttons[index]) if index < len(msg.buttons) else 0
+
+    @staticmethod
+    def _clamp(value, min_value, max_value):
+        return max(min_value, min(max_value, value))
+
+    def _now_seconds(self):
+        return self.get_clock().now().nanoseconds * 1e-9
     
     def _is_mode_switch_requested(self, mode_switch_button):
         """
@@ -727,17 +1147,13 @@ class ControlNode(Node):
         """
         retval = False
         if mode_switch_button and not self.last_mode_switch_button_state:
-            new_mode = 'manual'
-            if self._current_mode == ControlMode.MANUAL:
-                new_mode = 'lqr_tuning'
-            elif self._current_mode == ControlMode.LQR_TUNING:
-                new_mode = 'behavior'
-            elif self._current_mode == ControlMode.BEHAVIOR:
-                new_mode = 'manual'
-                
-            # Trigger ROS parameter callback internally to sync state smoothly
-            updated_param = Parameter('control_mode', value=new_mode)
-            self.set_parameters([updated_param])
+            if self.software_kill_active:
+                self._clear_software_kill()
+            if self._current_mode == ControlMode.MANUAL_ASSISTED:
+                self._initialize_manual_assisted_targets()
+            else:
+                updated_param = Parameter('control_mode', value='manual_assisted')
+                self.set_parameters([updated_param])
             retval = True
         self.last_mode_switch_button_state = mode_switch_button
         return retval
