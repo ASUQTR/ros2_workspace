@@ -62,11 +62,12 @@ vectornav:
     # Acceleration Compensation (Register 25, section 6.2.2)
     # C is a 3x3 scale/misalignment matrix (row-major), B is the bias offset vector (m/s^2).
     # Default is identity matrix + zero bias. Adjust C[2][2] to fix Z-axis scale factor.
-    # Z scale factor measured: 10.833 m/s2 raw vs 9.806 m/s2 local gravity -> 9.806/10.833 = 0.9052
+    # Z scale factor: Az_expected = sqrt(g^2 - Ax^2 - Ay^2) = sqrt(9.806^2 - 0.2925^2 - 0.5584^2) = 9.7862
+    # C[2][2] = 9.7862 / 10.8336 = 0.9033  (tilt-corrected, more accurate than naive 9.806/10.833)
     accelCompensation:
       C: [1.0, 0.0, 0.0,
           0.0, 1.0, 0.0,
-          0.0, 0.0, 0.9052]
+          0.0, 0.0, 0.9033]
       B: [0.0, 0.0, 0.0]
 
 vn_sensor_msgs:
