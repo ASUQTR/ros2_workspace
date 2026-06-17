@@ -18,8 +18,20 @@ services:
       - /dev:/dev
       - ./:/workspace
       - ../../workspace/packages:/workspace/src
-    # Start web server for FlexBE webui on port 8000
-    command: ros2 run flexbe_webui webui_node --host 0.0.0.0 --port 8000
+    # 1. Build workspace packages on first run (artifacts persist via volume).
+    # 2. Start FlexBE webui on port 8000.
+    # rosbridge (:9090) starts when sub_launch is run manually inside the container.
+    command: >
+      bash -c "
+        source /opt/underlay_ws/install/setup.bash &&
+        cd /workspace &&
+        if [ ! -d install ]; then
+          echo '[asuqtr_ros2] First run: building workspace packages...' &&
+          colcon build --symlink-install --cmake-args -DBUILD_TESTING=OFF;
+        fi &&
+        source install/setup.bash &&
+        exec ros2 run flexbe_webui webui_node --host 0.0.0.0 --port 8000
+      "
 
   # ==========================================
   # 2. ASUQTR DASHBOARD
