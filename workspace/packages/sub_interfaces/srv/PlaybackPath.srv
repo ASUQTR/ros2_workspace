@@ -2,4 +2,4 @@ string file_path
 uint8 idx
 ---
 float64[3] position
-float64[3] angles
+float64[4] angles
