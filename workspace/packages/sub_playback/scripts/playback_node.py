@@ -13,25 +13,6 @@ from nav_msgs.msg import Odometry
 
 from sub_interfaces.srv import PlaybackRecording, PlaybackPath
 
-
-def quaternion_to_euler(x: float, y: float, z: float, w: float) -> tuple[float, float, float]:
-    # Convert quaternion (x, y, z, w) to Euler angles (roll, pitch, yaw)
-    t0 = +2.0 * (w * x + y * z)
-    t1 = +1.0 - 2.0 * (x * x + y * y)
-    roll_x = math.atan2(t0, t1)
-
-    t2 = +2.0 * (w * y - z * x)
-    t2 = +1.0 if t2 > +1.0 else t2
-    t2 = -1.0 if t2 < -1.0 else t2
-    pitch_y = math.asin(t2)
-
-    t3 = +2.0 * (w * z + x * y)
-    t4 = +1.0 - 2.0 * (y * y + z * z)
-    yaw_z = math.atan2(t3, t4)
-
-    return roll_x, pitch_y, yaw_z
-
-
 class PlaybackNode(Node):
     # Parameters
     waypoint_timing: float = 5.0  # seconds
@@ -109,19 +90,19 @@ class PlaybackNode(Node):
             # wp may be dict with position or older tuple format
             if isinstance(wp, dict) and 'position' in wp:
                 pos = wp['position']
-                ang = wp.get('angles', [0.0, 0.0, 0.0])
+                ang = wp.get('angles', [0.0, 0.0, 0.0, 0.0])
             elif isinstance(wp, (list, tuple)) and len(wp) >= 3:
                 pos = [wp[0], wp[1], wp[2]]
-                ang = [0.0, 0.0, 0.0]
+                ang = [0.0, 0.0, 0.0, 0.0]
             else:
                 raise ValueError('Waypoint has unsupported format')
 
             response.position = [float(pos[0]), float(pos[1]), float(pos[2])]
-            response.angles = [float(ang[0]), float(ang[1]), float(ang[2])]
+            response.angles = [float(ang[0]), float(ang[1]), float(ang[2]), float(ang[3])] if len(ang) == 4 else [0.0, 0.0, 0.0, 0.0]
         except Exception as e:
             self.get_logger().error(f'Failed to load waypoints from {request.file_path}: {e}')
             response.position = [0.0, 0.0, 0.0]
-            response.angles = [0.0, 0.0, 0.0]
+            response.angles = [0.0, 0.0, 0.0, 0.0]
         return response
     
     def start_recording(self):
@@ -157,16 +138,15 @@ class PlaybackNode(Node):
         y = msg.pose.pose.position.y
         z = msg.pose.pose.position.z
         q = msg.pose.pose.orientation
-        roll, pitch, yaw = quaternion_to_euler(q.x, q.y, q.z, q.w)
 
         waypoint = {
             'position': [x, y, z],
-            'angles': [roll, pitch, yaw]
+            'angles': [q.x, q.y, q.z, q.w]
         }
         self.waypoints.append(waypoint)
         self.last_clock = current_time
 
-        self.get_logger().info(f'Received localization update: position=({x}, {y}, {z}), angles=(roll={roll:.3f}, pitch={pitch:.3f}, yaw={yaw:.3f})')
+        self.get_logger().info(f'Received localization update: position=({x}, {y}, {z}), angles=(x={q.x:.3f}, y={q.y:.3f}, z={q.z:.3f}, w={q.w:.3f})')
 
 
 def main(args=None):
