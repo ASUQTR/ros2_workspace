@@ -57,7 +57,7 @@ class PlaybackNode(Node):
         
         if request.start_recording:
             self.start_recording()
-            response.success = 1
+            response.success = True
         else:
             # Stop and dump waypoints to a uniquely named json file based on node clock
             self.stop_recording()
@@ -72,7 +72,7 @@ class PlaybackNode(Node):
                 self.get_logger().error(f'Failed to write waypoints to {filename}: {e}')
 
             self.waypoints.clear()
-            response.success = 0
+            response.success = False
 
         return response
     
