@@ -1,183 +1,913 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ASUQTR Manual Assisted Dashboard</title>
+  <title>ASUQTR Pilot Dashboard</title>
   <style>
     :root {
       color-scheme: dark;
-      font-family: Arial, sans-serif;
-      background: #111;
-      color: #eee;
+      --bg: #0b0d10;
+      --surface: #151a1f;
+      --surface-2: #1d242b;
+      --line: #303943;
+      --text: #eef2f6;
+      --muted: #a8b3bf;
+      --quiet: #75808b;
+      --blue: #4f8cff;
+      --green: #31c67a;
+      --amber: #f1b84b;
+      --red: #ef5753;
+      --shadow: 0 16px 34px rgba(0, 0, 0, 0.32);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
     }
-    body {
-      margin: 0;
-      padding: 16px;
-      display: grid;
-      grid-template-columns: 340px 1fr;
-      gap: 16px;
-    }
-    .panel {
-      background: #1b1b1b;
-      border: 1px solid #333;
-      border-radius: 8px;
-      padding: 14px;
-    }
-    h1, h2 {
-      margin: 0 0 12px;
-      font-size: 18px;
-    }
-    h2 {
-      font-size: 15px;
-      color: #bbb;
-    }
-    label {
-      display: block;
-      margin-top: 10px;
-      color: #bbb;
-      font-size: 13px;
-    }
-    input {
-      width: 100%;
+
+    * {
       box-sizing: border-box;
-      margin-top: 4px;
-      padding: 8px;
-      border-radius: 6px;
-      border: 1px solid #444;
-      background: #111;
-      color: #eee;
     }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      background:
+        linear-gradient(180deg, rgba(79, 140, 255, 0.08), transparent 260px),
+        var(--bg);
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
     button {
-      margin-top: 12px;
-      width: 100%;
-      padding: 10px;
-      border: 0;
-      border-radius: 6px;
-      background: #3d7cff;
-      color: white;
-      font-weight: 700;
+      min-height: 42px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 0 14px;
+      color: var(--text);
+      background: var(--surface-2);
       cursor: pointer;
     }
-    button.stop {
-      background: #d43b3b;
+
+    button:hover {
+      border-color: #4b5967;
+      background: #26303a;
     }
-    .status {
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .primary {
+      background: var(--blue);
+      color: #fff;
+    }
+
+    .primary:hover {
+      border-color: #7aaaed;
+      background: #659cff;
+    }
+
+    .danger {
+      background: var(--red);
+      color: #fff;
+    }
+
+    .danger:hover {
+      border-color: #ffaaa7;
+      background: #ff6864;
+    }
+
+    .recording {
+      background: #7a3df0;
+      color: #fff;
+    }
+
+    .recording:hover {
+      border-color: #b79aff;
+      background: #8752f3;
+    }
+
+    .recording.active {
+      border-color: #ffd27a;
+      background: var(--amber);
+      color: #1b1303;
+    }
+
+    .ghost {
+      background: transparent;
+      border-color: var(--line);
+    }
+
+    input {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 11px;
+      color: var(--text);
+      background: #0f1317;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.18);
+    }
+
+    .app {
       display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 8px;
-      margin-top: 8px;
+      grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+      gap: 16px;
+      min-height: 100vh;
+      padding: 16px;
+    }
+
+    .sidebar,
+    .main {
+      min-width: 0;
+    }
+
+    .sidebar {
+      display: grid;
+      align-content: start;
+      gap: 12px;
+    }
+
+    .main {
+      display: grid;
+      grid-template-rows: auto minmax(300px, 1fr) auto;
+      gap: 16px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(21, 26, 31, 0.94);
+      box-shadow: var(--shadow);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 54px;
+      padding: 14px 14px 10px;
+      border-bottom: 1px solid rgba(48, 57, 67, 0.72);
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 750;
+      letter-spacing: 0;
+    }
+
+    .panel-kicker {
+      margin: 2px 0 0;
+      color: var(--quiet);
+      font-size: 12px;
+    }
+
+    .panel-body {
+      padding: 14px;
+    }
+
+    .brand {
+      display: grid;
+      gap: 4px;
+      padding: 3px 2px 8px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 25px;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    .brand .sub {
+      color: var(--muted);
       font-size: 13px;
     }
-    .dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: #777;
-      align-self: center;
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
     }
-    .ok { background: #35c46a; }
-    .bad { background: #d43b3b; }
-    .warn { background: #d6a83d; }
-    pre {
-      margin: 10px 0 0;
+
+    .status-card {
+      min-height: 76px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
       padding: 10px;
-      background: #101010;
-      border-radius: 6px;
-      overflow: auto;
-      font-size: 12px;
-      min-height: 160px;
+      background: #10151a;
     }
+
+    .status-label {
+      color: var(--quiet);
+      font-size: 12px;
+    }
+
+    .status-value {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 14px;
+      font-weight: 720;
+      min-width: 0;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--quiet);
+      box-shadow: 0 0 0 4px rgba(117, 128, 139, 0.14);
+    }
+
+    .dot.ok {
+      background: var(--green);
+      box-shadow: 0 0 0 4px rgba(49, 198, 122, 0.15);
+    }
+
+    .dot.warn {
+      background: var(--amber);
+      box-shadow: 0 0 0 4px rgba(241, 184, 75, 0.15);
+    }
+
+    .dot.bad {
+      background: var(--red);
+      box-shadow: 0 0 0 4px rgba(239, 87, 83, 0.15);
+    }
+
+    .field-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .field label {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 680;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .button-row.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .readout-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      min-height: 70px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #10151a;
+    }
+
+    .metric-label {
+      color: var(--quiet);
+      font-size: 12px;
+    }
+
+    .metric-value {
+      margin-top: 6px;
+      font-size: 18px;
+      font-weight: 760;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .camera-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(260px, 1fr));
-      gap: 16px;
+      gap: 12px;
+      min-height: 0;
     }
-    .camera img {
-      width: 100%;
-      min-height: 260px;
-      object-fit: contain;
-      background: #050505;
+
+    .camera {
+      position: relative;
+      display: grid;
+      grid-template-rows: auto minmax(220px, 1fr);
+      min-height: 0;
+      border: 1px solid var(--line);
       border-radius: 8px;
-      border: 1px solid #333;
+      overflow: hidden;
+      background: #06080a;
     }
-    .help {
-      line-height: 1.45;
-      color: #ccc;
+
+    .camera-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .camera img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 280px;
+      object-fit: contain;
+      background: #040608;
+    }
+
+    .camera.offline img {
+      visibility: hidden;
+    }
+
+    .camera-placeholder {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      top: 39px;
+      display: none;
+      place-items: center;
+      padding: 18px;
+      color: var(--quiet);
+      text-align: center;
       font-size: 13px;
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%),
+        linear-gradient(225deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%),
+        #05080b;
+      background-size: 28px 28px;
     }
-    @media (max-width: 900px) {
-      body {
+
+    .camera.offline .camera-placeholder {
+      display: grid;
+    }
+
+    .control-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .pilot-layout {
+      display: grid;
+      grid-template-columns: minmax(310px, 420px) minmax(0, 1fr);
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .gamepad-visual {
+      position: relative;
+      min-height: 292px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        radial-gradient(circle at 28% 42%, rgba(79, 140, 255, 0.1), transparent 28%),
+        radial-gradient(circle at 72% 42%, rgba(49, 198, 122, 0.1), transparent 28%),
+        #10151a;
+      overflow: hidden;
+    }
+
+    .gamepad-shell {
+      position: absolute;
+      inset: 42px 34px 34px;
+      border: 1px solid #3b4652;
+      border-radius: 92px 92px 70px 70px;
+      background: #171d23;
+      box-shadow: inset 0 -18px 36px rgba(0, 0, 0, 0.25);
+    }
+
+    .stick {
+      position: absolute;
+      width: 86px;
+      height: 86px;
+      border: 1px solid #3d4854;
+      border-radius: 50%;
+      background: #0b0f13;
+    }
+
+    .stick.left {
+      left: 68px;
+      top: 112px;
+    }
+
+    .stick.right {
+      right: 68px;
+      top: 112px;
+    }
+
+    .stick-dot {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 28px;
+      height: 28px;
+      margin: -14px 0 0 -14px;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 0 5px rgba(79, 140, 255, 0.15);
+      transform: translate(0, 0);
+    }
+
+    .trigger {
+      position: absolute;
+      top: 18px;
+      width: 110px;
+      height: 18px;
+      border: 1px solid #414d59;
+      border-radius: 999px;
+      background: #10151a;
+      overflow: hidden;
+    }
+
+    .trigger.left {
+      left: 54px;
+    }
+
+    .trigger.right {
+      right: 54px;
+    }
+
+    .trigger-fill {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: var(--green);
+    }
+
+    .face-buttons {
+      position: absolute;
+      right: 54px;
+      top: 92px;
+      width: 108px;
+      height: 108px;
+    }
+
+    .face-button,
+    .small-button {
+      position: absolute;
+      display: grid;
+      place-items: center;
+      border: 1px solid #465360;
+      border-radius: 50%;
+      color: var(--muted);
+      background: #0b0f13;
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    .face-button {
+      width: 34px;
+      height: 34px;
+    }
+
+    .face-button.active,
+    .small-button.active {
+      border-color: rgba(49, 198, 122, 0.8);
+      color: #eafff3;
+      background: rgba(49, 198, 122, 0.22);
+    }
+
+    .face-a { left: 37px; bottom: 0; }
+    .face-b { right: 0; top: 37px; }
+    .face-x { left: 0; top: 37px; }
+    .face-y { left: 37px; top: 0; }
+
+    .small-button {
+      width: 44px;
+      height: 24px;
+      border-radius: 999px;
+      font-size: 10px;
+    }
+
+    .small-button.select {
+      left: calc(50% - 54px);
+      top: 150px;
+    }
+
+    .small-button.start {
+      left: calc(50% + 10px);
+      top: 150px;
+    }
+
+    .axis-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 11px;
+      background: #10151a;
+    }
+
+    .axis-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 680;
+    }
+
+    .axis-value {
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .bar {
+      position: relative;
+      height: 9px;
+      margin-top: 10px;
+      border-radius: 999px;
+      background: #2a323b;
+      overflow: hidden;
+    }
+
+    .bar::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 1px;
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    .bar-fill {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 0;
+      background: var(--blue);
+      border-radius: 999px;
+    }
+
+    .button-map {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .pad-button {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      color: var(--quiet);
+      background: #10151a;
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    .pad-button.active {
+      border-color: rgba(49, 198, 122, 0.8);
+      color: #dff9eb;
+      background: rgba(49, 198, 122, 0.18);
+    }
+
+    .debug {
+      max-height: 220px;
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #090c0f;
+      color: #cbd5df;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .tiny {
+      color: var(--quiet);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    @media (max-width: 1080px) {
+      .app {
         grid-template-columns: 1fr;
       }
-      .camera-grid {
+
+      .main {
+        grid-template-rows: auto auto auto;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .app {
+        padding: 10px;
+      }
+
+      .status-grid,
+      .camera-grid,
+      .control-grid,
+      .pilot-layout,
+      .button-row,
+      .button-row.three,
+      .readout-grid {
         grid-template-columns: 1fr;
+      }
+
+      .button-map {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .brand h1 {
+        font-size: 22px;
       }
     }
   </style>
 </head>
 <body>
-  <section class="panel">
-    <h1>Manual Assisted</h1>
-
-    <label>Jetson IP</label>
-    <input id="jetsonIp" value="192.168.0.10">
-
-    <label>rosbridge URL</label>
-    <input id="rosbridgeUrl" value="ws://192.168.0.10:9090">
-
-    <label>camera base URL</label>
-    <input id="cameraUrl" value="http://192.168.0.10:6969">
-
-    <button id="connectBtn">Connect</button>
-    <button id="armBtn">Send Start / Arm</button>
-    <button id="stopBtn" class="stop">Send Select / Stop</button>
-
-    <div class="status"><span>rosbridge</span><span id="rosDot" class="dot bad"></span></div>
-    <div class="status"><span>gamepad</span><span id="gamepadDot" class="dot bad"></span></div>
-    <div class="status"><span>publishing /dashboard/gamepad</span><span id="pubDot" class="dot warn"></span></div>
-
-    <h2 style="margin-top:16px;">Mapping</h2>
-    <div class="help">
-      Left stick Y: avance / recul<br>
-      Left stick X: yaw<br>
-      RT / LT: profondeur temporaire<br>
-      X / B: roll<br>
-      A / Y: pitch<br>
-      Select: stop PWM<br>
-      Start: start / arm
-    </div>
-
-    <pre id="debug">Waiting...</pre>
-  </section>
-
-  <section class="panel">
-    <h1>Cameras</h1>
-    <div class="camera-grid">
-      <div class="camera">
-        <h2>Camera 1</h2>
-        <img id="cam1" alt="camera 1">
+  <main class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>ASUQTR Pilot Dashboard</h1>
+        <div class="sub">Manual assisted / ROSBridge</div>
       </div>
-      <div class="camera">
-        <h2>Camera 2</h2>
-        <img id="cam2" alt="camera 2">
-      </div>
-    </div>
-  </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Liaisons</h2>
+            <p class="panel-kicker" id="hostHint">Pret</p>
+          </div>
+        </div>
+        <div class="panel-body field-grid">
+          <div class="field">
+            <label for="jetsonIp">Jetson / host</label>
+            <input id="jetsonIp" value="192.168.0.10" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="rosbridgeUrl">ROSBridge</label>
+            <input id="rosbridgeUrl" value="ws://192.168.0.10:9090" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="cameraUrl">Cameras</label>
+            <input id="cameraUrl" value="http://192.168.0.10:6969" autocomplete="off">
+          </div>
+          <div class="button-row three">
+            <button id="localBtn" class="ghost" type="button">Local</button>
+            <button id="jetsonBtn" class="ghost" type="button">Jetson</button>
+            <button id="connectBtn" class="primary" type="button">Connecter</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Etat</h2>
+            <p class="panel-kicker" id="publishRate">0 Hz</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="status-grid">
+            <div class="status-card">
+              <div class="status-label">ROS</div>
+              <div class="status-value"><span id="rosDot" class="dot bad"></span><span id="rosText">Hors ligne</span></div>
+            </div>
+            <div class="status-card">
+              <div class="status-label">Gamepad</div>
+              <div class="status-value"><span id="gamepadDot" class="dot bad"></span><span id="gamepadText">Absent</span></div>
+            </div>
+            <div class="status-card">
+              <div class="status-label">Joy</div>
+              <div class="status-value"><span id="pubDot" class="dot warn"></span><span id="pubText">En attente</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Commandes</h2>
+            <p class="panel-kicker">/dashboard/gamepad</p>
+          </div>
+        </div>
+        <div class="panel-body field-grid">
+          <div class="button-row">
+            <button id="armBtn" class="primary" type="button">Start / Arm</button>
+            <button id="stopBtn" class="danger" type="button">Select / Stop</button>
+          </div>
+          <button id="recordBtn" class="recording" type="button">Record</button>
+          <div class="readout-grid">
+            <div class="metric">
+              <div class="metric-label">Mode</div>
+              <div id="modeMetric" class="metric-value">Local</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Dernier message</div>
+              <div id="ageMetric" class="metric-value">-</div>
+            </div>
+          </div>
+          <div class="tiny">Start envoie la demande de changement de mode. Select active l'arret logiciel via disable_pwm. Record est un controle HMI temporaire sans effet ROS.</div>
+        </div>
+      </section>
+    </aside>
+
+    <section class="main">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Cameras</h2>
+            <p class="panel-kicker" id="cameraHint">Flux non charge</p>
+          </div>
+          <button id="reloadCamerasBtn" class="ghost" type="button">Recharger</button>
+        </div>
+        <div class="panel-body camera-grid">
+          <article id="cam1Card" class="camera offline">
+            <div class="camera-title"><span>Camera 1</span><span id="cam1State">-</span></div>
+            <img id="cam1" alt="Camera 1">
+            <div class="camera-placeholder">Camera non detectee</div>
+          </article>
+          <article id="cam2Card" class="camera offline">
+            <div class="camera-title"><span>Camera 2</span><span id="cam2State">-</span></div>
+            <img id="cam2" alt="Camera 2">
+            <div class="camera-placeholder">Camera non detectee</div>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Entrees pilote</h2>
+            <p class="panel-kicker" id="gamepadName">Aucune manette</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="pilot-layout">
+            <div class="gamepad-visual" aria-label="Gamepad state">
+              <div class="gamepad-shell"></div>
+              <div class="trigger left"><span id="ltFill" class="trigger-fill"></span></div>
+              <div class="trigger right"><span id="rtFill" class="trigger-fill"></span></div>
+              <div class="stick left"><span id="leftStickDot" class="stick-dot"></span></div>
+              <div class="stick right"><span id="rightStickDot" class="stick-dot"></span></div>
+              <div class="face-buttons">
+                <span id="faceA" class="face-button face-a">A</span>
+                <span id="faceB" class="face-button face-b">B</span>
+                <span id="faceX" class="face-button face-x">X</span>
+                <span id="faceY" class="face-button face-y">Y</span>
+              </div>
+              <span id="smallSelect" class="small-button select">Select</span>
+              <span id="smallStart" class="small-button start">Start</span>
+            </div>
+
+            <div class="control-grid">
+              <div class="axis-card" data-axis-card="leftX">
+                <div class="axis-top"><span>Left X / yaw</span><span class="axis-value" id="leftXValue">0.00</span></div>
+                <div class="bar"><span class="bar-fill" id="leftXBar"></span></div>
+              </div>
+              <div class="axis-card" data-axis-card="leftY">
+                <div class="axis-top"><span>Left Y / forward</span><span class="axis-value" id="leftYValue">0.00</span></div>
+                <div class="bar"><span class="bar-fill" id="leftYBar"></span></div>
+              </div>
+              <div class="axis-card" data-axis-card="vertical">
+                <div class="axis-top"><span>Triggers / depth</span><span class="axis-value" id="verticalValue">0.00</span></div>
+                <div class="bar"><span class="bar-fill" id="verticalBar"></span></div>
+              </div>
+              <div class="axis-card" data-axis-card="rightX">
+                <div class="axis-top"><span>Right X</span><span class="axis-value" id="rightXValue">0.00</span></div>
+                <div class="bar"><span class="bar-fill" id="rightXBar"></span></div>
+              </div>
+              <div class="axis-card" data-axis-card="rightY">
+                <div class="axis-top"><span>Right Y</span><span class="axis-value" id="rightYValue">0.00</span></div>
+                <div class="bar"><span class="bar-fill" id="rightYBar"></span></div>
+              </div>
+              <div class="axis-card" data-axis-card="buttons">
+                <div class="axis-top"><span>Buttons</span><span class="axis-value" id="buttonValue">0</span></div>
+                <div class="button-map">
+                  <span id="btnA" class="pad-button">A</span>
+                  <span id="btnB" class="pad-button">B</span>
+                  <span id="btnX" class="pad-button">X</span>
+                  <span id="btnY" class="pad-button">Y</span>
+                  <span id="btnSelect" class="pad-button">Select</span>
+                  <span id="btnStart" class="pad-button">Start</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Debug</h2>
+            <p class="panel-kicker">manual_assisted + Joy</p>
+          </div>
+          <button id="clearDebugBtn" class="ghost" type="button">Vider</button>
+        </div>
+        <div class="panel-body">
+          <pre id="debug" class="debug">Waiting...</pre>
+        </div>
+      </section>
+    </section>
+  </main>
 
   <script>
     const joyTopic = "/dashboard/gamepad";
+    const debugTopic = "/debug/manual_assisted";
+    const publishPeriodMs = 50;
+    const storageKey = "asuqtr.dashboard.settings";
+
     let ws = null;
     let publishTimer = null;
+    let publishCount = 0;
+    let lastPublishCount = 0;
     let lastJoy = null;
+    let lastJoyAt = 0;
+    let manualAssistedDebug = null;
+    let selectedModeRequest = "Start envoye";
+    let fakeRecordEnabled = false;
 
-    const rosDot = document.getElementById("rosDot");
-    const gamepadDot = document.getElementById("gamepadDot");
-    const pubDot = document.getElementById("pubDot");
-    const debug = document.getElementById("debug");
+    const el = {
+      jetsonIp: document.getElementById("jetsonIp"),
+      rosbridgeUrl: document.getElementById("rosbridgeUrl"),
+      cameraUrl: document.getElementById("cameraUrl"),
+      hostHint: document.getElementById("hostHint"),
+      rosDot: document.getElementById("rosDot"),
+      gamepadDot: document.getElementById("gamepadDot"),
+      pubDot: document.getElementById("pubDot"),
+      rosText: document.getElementById("rosText"),
+      gamepadText: document.getElementById("gamepadText"),
+      pubText: document.getElementById("pubText"),
+      publishRate: document.getElementById("publishRate"),
+      gamepadName: document.getElementById("gamepadName"),
+      debug: document.getElementById("debug"),
+      modeMetric: document.getElementById("modeMetric"),
+      ageMetric: document.getElementById("ageMetric"),
+      cameraHint: document.getElementById("cameraHint"),
+      recordBtn: document.getElementById("recordBtn"),
+      cam1Card: document.getElementById("cam1Card"),
+      cam2Card: document.getElementById("cam2Card"),
+      cam1: document.getElementById("cam1"),
+      cam2: document.getElementById("cam2"),
+      cam1State: document.getElementById("cam1State"),
+      cam2State: document.getElementById("cam2State"),
+      leftStickDot: document.getElementById("leftStickDot"),
+      rightStickDot: document.getElementById("rightStickDot"),
+      ltFill: document.getElementById("ltFill"),
+      rtFill: document.getElementById("rtFill")
+    };
+
+    const axisEls = {
+      leftX: { value: document.getElementById("leftXValue"), bar: document.getElementById("leftXBar") },
+      leftY: { value: document.getElementById("leftYValue"), bar: document.getElementById("leftYBar") },
+      vertical: { value: document.getElementById("verticalValue"), bar: document.getElementById("verticalBar") },
+      rightX: { value: document.getElementById("rightXValue"), bar: document.getElementById("rightXBar") },
+      rightY: { value: document.getElementById("rightYValue"), bar: document.getElementById("rightYBar") }
+    };
+
+    const buttonEls = {
+      0: document.getElementById("btnA"),
+      1: document.getElementById("btnB"),
+      2: document.getElementById("btnX"),
+      3: document.getElementById("btnY"),
+      6: document.getElementById("btnSelect"),
+      7: document.getElementById("btnStart")
+    };
+
+    const faceButtonEls = {
+      0: document.getElementById("faceA"),
+      1: document.getElementById("faceB"),
+      2: document.getElementById("faceX"),
+      3: document.getElementById("faceY"),
+      6: document.getElementById("smallSelect"),
+      7: document.getElementById("smallStart")
+    };
 
     function setDot(dot, status) {
       dot.className = "dot " + status;
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
     }
 
     function nowStamp() {
@@ -188,53 +918,136 @@
       };
     }
 
+    function loadSettings() {
+      try {
+        const settings = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        if (settings.jetsonIp) el.jetsonIp.value = settings.jetsonIp;
+        if (settings.rosbridgeUrl) el.rosbridgeUrl.value = settings.rosbridgeUrl;
+        if (settings.cameraUrl) el.cameraUrl.value = settings.cameraUrl;
+      } catch (error) {
+        console.warn("Could not load dashboard settings", error);
+      }
+    }
+
+    function saveSettings() {
+      const settings = {
+        jetsonIp: el.jetsonIp.value.trim(),
+        rosbridgeUrl: el.rosbridgeUrl.value.trim(),
+        cameraUrl: el.cameraUrl.value.trim()
+      };
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(settings));
+      } catch (error) {
+        console.warn("Could not save dashboard settings", error);
+      }
+    }
+
+    function applyHost(host) {
+      const cleanHost = host.trim();
+      el.jetsonIp.value = cleanHost;
+      el.rosbridgeUrl.value = "ws://" + cleanHost + ":9090";
+      el.cameraUrl.value = "http://" + cleanHost + ":6969";
+      saveSettings();
+    }
+
+    function normalizedUrls() {
+      const ip = el.jetsonIp.value.trim() || "127.0.0.1";
+      const rosUrl = el.rosbridgeUrl.value.trim() || "ws://" + ip + ":9090";
+      const camBase = el.cameraUrl.value.trim() || "http://" + ip + ":6969";
+      el.rosbridgeUrl.value = rosUrl;
+      el.cameraUrl.value = camBase;
+      return { ip, rosUrl, camBase };
+    }
+
+    function send(obj) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+      ws.send(JSON.stringify(obj));
+      return true;
+    }
+
     function advertiseJoy() {
       send({
         op: "advertise",
         topic: joyTopic,
         type: "sensor_msgs/msg/Joy"
       });
-    }
-
-    function send(obj) {
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        return;
-      }
-      ws.send(JSON.stringify(obj));
+      send({
+        op: "subscribe",
+        topic: debugTopic,
+        type: "std_msgs/msg/Float64MultiArray",
+        throttle_rate: 120
+      });
     }
 
     function connect() {
-      const ip = document.getElementById("jetsonIp").value.trim();
-      const rosUrl = document.getElementById("rosbridgeUrl").value.trim() || `ws://${ip}:9090`;
-      const camBase = document.getElementById("cameraUrl").value.trim() || `http://${ip}:6969`;
-
-      document.getElementById("rosbridgeUrl").value = rosUrl;
-      document.getElementById("cameraUrl").value = camBase;
-      document.getElementById("cam1").src = `${camBase}/video_feed1`;
-      document.getElementById("cam2").src = `${camBase}/video_feed2`;
+      const { rosUrl, camBase } = normalizedUrls();
+      saveSettings();
+      reloadCameras(camBase);
 
       if (ws) {
+        ws.onopen = null;
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.onmessage = null;
         ws.close();
       }
 
+      el.hostHint.textContent = rosUrl;
+      el.rosText.textContent = "Connexion...";
+      setDot(el.rosDot, "warn");
+
       ws = new WebSocket(rosUrl);
       ws.onopen = () => {
-        setDot(rosDot, "ok");
+        setDot(el.rosDot, "ok");
+        el.rosText.textContent = "Connecte";
         advertiseJoy();
       };
       ws.onclose = () => {
-        setDot(rosDot, "bad");
-        setDot(pubDot, "warn");
+        setDot(el.rosDot, "bad");
+        setDot(el.pubDot, "warn");
+        el.rosText.textContent = "Hors ligne";
+        el.pubText.textContent = "En attente";
       };
       ws.onerror = () => {
-        setDot(rosDot, "bad");
+        setDot(el.rosDot, "bad");
+        el.rosText.textContent = "Erreur";
       };
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.topic === debugTopic) {
+            manualAssistedDebug = data.msg;
+          }
+        } catch (error) {
+          console.warn("Invalid rosbridge message", error);
+        }
+      };
+    }
+
+    function reloadCameras(baseUrl) {
+      const camBase = baseUrl || normalizedUrls().camBase;
+      const stamp = Date.now();
+      setCameraState(1, "loading");
+      setCameraState(2, "loading");
+      el.cam1State.textContent = "loading";
+      el.cam2State.textContent = "loading";
+      el.cameraHint.textContent = camBase;
+      el.cam1.src = camBase + "/video_feed1?t=" + stamp;
+      el.cam2.src = camBase + "/video_feed2?t=" + stamp;
+    }
+
+    function setCameraState(cameraIndex, state) {
+      const card = cameraIndex === 1 ? el.cam1Card : el.cam2Card;
+      const label = cameraIndex === 1 ? el.cam1State : el.cam2State;
+      label.textContent = state;
+      card.classList.toggle("offline", state !== "online" && state !== "loading");
     }
 
     function buttonValue(gp, index) {
       const button = gp.buttons[index];
-      if (!button) return 0;
-      return button.pressed ? 1 : 0;
+      return button && button.pressed ? 1 : 0;
     }
 
     function triggerAxis(gp, index) {
@@ -247,31 +1060,28 @@
       const pads = navigator.getGamepads ? navigator.getGamepads() : [];
       const gp = Array.from(pads).find(Boolean);
       if (!gp) {
-        setDot(gamepadDot, "bad");
+        setDot(el.gamepadDot, "bad");
+        el.gamepadText.textContent = "Absent";
+        el.gamepadName.textContent = "Aucune manette";
+        resetInputs();
         return null;
       }
 
-      setDot(gamepadDot, "ok");
+      setDot(el.gamepadDot, "ok");
+      el.gamepadText.textContent = "Actif";
+      el.gamepadName.textContent = gp.id || "Gamepad";
 
       const leftX = gp.axes[0] || 0;
       const leftY = -(gp.axes[1] || 0);
       const rightX = gp.axes[2] || 0;
       const rightY = -(gp.axes[3] || 0);
+      const ltAxis = triggerAxis(gp, 6);
+      const rtAxis = triggerAxis(gp, 7);
+      const vertical = -((ltAxis - rtAxis) / 2);
+      const ltValue = gp.buttons[6] ? gp.buttons[6].value : 0;
+      const rtValue = gp.buttons[7] ? gp.buttons[7].value : 0;
 
-      // Match the axis layout expected by control_node.py:
-      // axes[0]=left X, axes[1]=left Y, axes[2]=LT as ROS joy axis,
-      // axes[3]=right X, axes[4]=right Y, axes[5]=RT as ROS joy axis.
-      const axes = [
-        leftX,
-        leftY,
-        triggerAxis(gp, 6),
-        rightX,
-        rightY,
-        triggerAxis(gp, 7)
-      ];
-
-      // Match the button layout expected by control_node.py:
-      // A=0, B=1, X=2, Y=3, Select/Back=6, Start=7.
+      const axes = [leftX, leftY, ltAxis, rightX, rightY, rtAxis];
       const buttons = new Array(12).fill(0);
       buttons[0] = buttonValue(gp, 0);
       buttons[1] = buttonValue(gp, 1);
@@ -281,6 +1091,8 @@
       buttons[5] = buttonValue(gp, 5);
       buttons[6] = buttonValue(gp, 8);
       buttons[7] = buttonValue(gp, 9);
+
+      updateInputs({ leftX, leftY, rightX, rightY, vertical, ltValue, rtValue, buttons });
 
       return {
         header: {
@@ -292,14 +1104,77 @@
       };
     }
 
+    function updateInputs(state) {
+      setAxis("leftX", state.leftX);
+      setAxis("leftY", state.leftY);
+      setAxis("rightX", state.rightX);
+      setAxis("rightY", state.rightY);
+      setAxis("vertical", state.vertical);
+
+      let activeCount = 0;
+      Object.keys(buttonEls).forEach((index) => {
+        const active = Boolean(state.buttons[Number(index)]);
+        buttonEls[index].classList.toggle("active", active);
+        faceButtonEls[index].classList.toggle("active", active);
+        if (active) activeCount += 1;
+      });
+      document.getElementById("buttonValue").textContent = String(activeCount);
+
+      setStick(el.leftStickDot, state.leftX, -state.leftY);
+      setStick(el.rightStickDot, state.rightX, -state.rightY);
+      el.ltFill.style.width = (clamp(state.ltValue, 0, 1) * 100).toFixed(1) + "%";
+      el.rtFill.style.width = (clamp(state.rtValue, 0, 1) * 100).toFixed(1) + "%";
+    }
+
+    function resetInputs() {
+      updateInputs({
+        leftX: 0,
+        leftY: 0,
+        rightX: 0,
+        rightY: 0,
+        vertical: 0,
+        ltValue: 0,
+        rtValue: 0,
+        buttons: new Array(12).fill(0)
+      });
+    }
+
+    function setStick(dot, x, y) {
+      const maxTravel = 26;
+      const tx = clamp(x, -1, 1) * maxTravel;
+      const ty = clamp(y, -1, 1) * maxTravel;
+      dot.style.transform = "translate(" + tx.toFixed(1) + "px, " + ty.toFixed(1) + "px)";
+    }
+
+    function setAxis(name, value) {
+      const axis = axisEls[name];
+      const normalized = clamp(value, -1, 1);
+      axis.value.textContent = normalized.toFixed(2);
+      if (normalized >= 0) {
+        axis.bar.style.left = "50%";
+        axis.bar.style.width = (normalized * 50).toFixed(2) + "%";
+      } else {
+        axis.bar.style.left = (50 + normalized * 50).toFixed(2) + "%";
+        axis.bar.style.width = (-normalized * 50).toFixed(2) + "%";
+      }
+    }
+
     function publishJoy(msg) {
-      send({
+      const published = send({
         op: "publish",
         topic: joyTopic,
         msg
       });
       lastJoy = msg;
-      setDot(pubDot, ws && ws.readyState === WebSocket.OPEN ? "ok" : "warn");
+      lastJoyAt = Date.now();
+      if (published) {
+        publishCount += 1;
+        setDot(el.pubDot, "ok");
+        el.pubText.textContent = "Publication";
+      } else {
+        setDot(el.pubDot, "warn");
+        el.pubText.textContent = "En attente";
+      }
     }
 
     function sendSynthetic(buttonIndex) {
@@ -311,6 +1186,9 @@
       msg.buttons = msg.buttons.slice();
       msg.buttons[buttonIndex] = 1;
       publishJoy(msg);
+      if (buttonIndex === 7) {
+        el.modeMetric.textContent = selectedModeRequest;
+      }
       setTimeout(() => {
         msg.header.stamp = nowStamp();
         msg.buttons[buttonIndex] = 0;
@@ -318,28 +1196,68 @@
       }, 120);
     }
 
+    function updateDebug() {
+      const age = lastJoyAt ? ((Date.now() - lastJoyAt) / 1000).toFixed(1) + "s" : "-";
+      el.ageMetric.textContent = age;
+      el.debug.textContent = JSON.stringify({
+        rosbridge: Boolean(ws && ws.readyState === WebSocket.OPEN),
+        topic: joyTopic,
+        fakeRecordEnabled,
+        lastJoy,
+        manualAssistedDebug
+      }, null, 2);
+    }
+
     function loop() {
       const joy = readGamepad();
       if (joy) {
         publishJoy(joy);
       }
+      updateDebug();
+    }
 
-      const gp = navigator.getGamepads ? Array.from(navigator.getGamepads()).find(Boolean) : null;
-      debug.textContent = JSON.stringify({
-        connected: Boolean(ws && ws.readyState === WebSocket.OPEN),
-        gamepad: gp ? gp.id : null,
-        joy: lastJoy
-      }, null, 2);
+    function updatePublishRate() {
+      const delta = publishCount - lastPublishCount;
+      lastPublishCount = publishCount;
+      el.publishRate.textContent = delta + " Hz";
     }
 
     document.getElementById("connectBtn").addEventListener("click", connect);
+    document.getElementById("localBtn").addEventListener("click", () => applyHost("127.0.0.1"));
+    document.getElementById("jetsonBtn").addEventListener("click", () => applyHost("192.168.0.10"));
     document.getElementById("armBtn").addEventListener("click", () => sendSynthetic(7));
     document.getElementById("stopBtn").addEventListener("click", () => sendSynthetic(6));
+    document.getElementById("recordBtn").addEventListener("click", () => {
+      fakeRecordEnabled = !fakeRecordEnabled;
+      el.recordBtn.classList.toggle("active", fakeRecordEnabled);
+      el.recordBtn.textContent = fakeRecordEnabled ? "Record armed" : "Record";
+    });
+    document.getElementById("reloadCamerasBtn").addEventListener("click", () => reloadCameras());
+    document.getElementById("clearDebugBtn").addEventListener("click", () => {
+      lastJoy = null;
+      manualAssistedDebug = null;
+      updateDebug();
+    });
 
-    window.addEventListener("gamepadconnected", () => setDot(gamepadDot, "ok"));
-    window.addEventListener("gamepaddisconnected", () => setDot(gamepadDot, "bad"));
+    el.cam1.addEventListener("load", () => { setCameraState(1, "online"); });
+    el.cam2.addEventListener("load", () => { setCameraState(2, "online"); });
+    el.cam1.addEventListener("error", () => { setCameraState(1, "offline"); });
+    el.cam2.addEventListener("error", () => { setCameraState(2, "offline"); });
 
-    publishTimer = setInterval(loop, 50);
+    window.addEventListener("gamepadconnected", () => {
+      setDot(el.gamepadDot, "ok");
+      el.gamepadText.textContent = "Actif";
+    });
+    window.addEventListener("gamepaddisconnected", () => {
+      setDot(el.gamepadDot, "bad");
+      el.gamepadText.textContent = "Absent";
+    });
+
+    loadSettings();
+    resetInputs();
+    publishTimer = setInterval(loop, publishPeriodMs);
+    setInterval(updatePublishRate, 1000);
+    updateDebug();
   </script>
 </body>
 </html>

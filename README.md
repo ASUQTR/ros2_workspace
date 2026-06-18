@@ -108,6 +108,42 @@ To view the UI, simply open a web browser (Chrome, Firefox, etc.) on your host c
 http://<JETSON_IP>
 ```
 
+### 🎮 Manual Assisted Pilot Dashboard
+The ROS workspace also includes a standalone operator UI for the `manual_assisted` control workflow:
+
+```text
+tools/manual_assisted_dashboard.html
+```
+
+This dashboard connects to ROS through `rosbridge`, publishes `sensor_msgs/msg/Joy` on `/dashboard/gamepad`, and displays the camera endpoints exposed by the vision service.
+
+For simulation or bench testing:
+
+1. Start the ROS launch that includes `control_node` and `rosbridge_server`.
+   ```bash
+   ros2 launch sub_launch unity_sim.launch.yaml
+   ```
+2. Open `tools/manual_assisted_dashboard.html` in a browser.
+3. Use `Local` for a local simulation host or set the Jetson IP, then click `Connecter`.
+4. Confirm the control node receives joystick messages.
+   ```bash
+   ros2 topic echo /dashboard/gamepad
+   ```
+
+The dashboard expects ROSBridge on port `9090`. The gamepad mapping matches `workspace/packages/sub_control/scripts/control_node.py`: browser Back/Start are remapped to ROS button indices `6` and `7`, and the trigger axes are published as Joy axes `2` and `5`.
+
+Unity and the dashboard both connect as WebSocket clients to the same `rosbridge_websocket` server. They should both use `ws://<ROS_HOST>:9090`; do not start a second `rosbridge_websocket` on the same port.
+
+To verify the Unity -> EKF path:
+
+```bash
+ros2 topic info /unity/odometry/raw -v
+ros2 topic echo --once /unity/odometry/raw
+ros2 topic echo --once /odometry/filtered
+```
+
+The Unity scene publishes `/unity/odometry/raw` as `nav_msgs/msg/Odometry`, and `robot_localization_unity.yaml` feeds that topic into the EKF as `odom0`.
+
 ## 🛠️ 3. Build ROS2 Workspace
 
 Once your container is running, you need to build the ROS 2 workspace. We heavily rely on the `--symlink-install` flag during development.

@@ -1,16 +1,19 @@
 launch:
   # Unity is the simulator in this launch:
-  # - Unity publishes /odometry/filtered as nav_msgs/Odometry.
+  # - Unity publishes simulated sensors, including /unity/odometry/raw and /vectornav/imu.
+  # - robot_localization publishes /odometry/filtered as the EKF output.
   # - control_node publishes /thruster_cmd as sub_interfaces/ThrusterCommand.
   # - rosbridge_server exposes ws://127.0.0.1:9090 for the Unity WebSocket client.
   #
   # Deliberately not launched here:
   # - Gazebo
-  # - robot_localization EKF
   # - physical hardware nodes: actuator_node, gpio_node, sensor_node, dvl_node, vectornav
   - arg:
       name: "urdf_file"
       default: "$(find-pkg-share sub_launch)/urdf/asuqtr_sub.urdf"
+  - arg:
+      name: "ekf_config_file"
+      default: "$(find-pkg-share sub_control)/config/robot_localization_unity.yaml"
 
   - node:
       pkg: "sub_control"
@@ -22,7 +25,7 @@ launch:
         - name: "control_mode"
           value: "lqr_tuning"
         - name: "use_sim_time"
-          value: false
+          value: true
 
   - node:
       pkg: "robot_state_publisher"
@@ -33,7 +36,17 @@ launch:
         - name: "robot_description"
           value: "$(command 'cat $(var urdf_file)')"
         - name: "use_sim_time"
-          value: false
+          value: true
+
+  - node:
+      pkg: "robot_localization"
+      exec: "ekf_node"
+      name: "ekf_filter_node"
+      output: "screen"
+      param:
+        - from: "$(var ekf_config_file)"
+        - name: "use_sim_time"
+          value: true
 
   - node:
       pkg: "rosbridge_server"

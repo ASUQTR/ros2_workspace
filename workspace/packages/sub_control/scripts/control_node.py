@@ -51,6 +51,7 @@ from sub_control.lqr_solver import SubLQRSolver, THRUST_ALLOC_MAT, Bm
 DEFAULT_Q = [4*1052.4762, 4*578.7808, 4*670.0731, 4*3134.6757, 4*3959.9523, 20*1453.9726, 4*265.1124, 4*303.5306, 4*204.2912, 4*12.3207, 4*19.8116, 20*6.2442]
 # R: Thruster energy penalties (Higher = less aggressive thrust)
 DEFAULT_R = [10.0, 10.0, 1000.0, 1000.0, 1000.0, 1000.0, 10.0, 10.0]
+DEFAULT_DAMPING_SIGN = -1.0
 DEFAULT_MAX_THRUSTER_FORCE = 14.4
 DEFAULT_MAX_THROTTLE = 0.8
 DEFAULT_JOY_DEAD_ZONE = 0.1
@@ -119,7 +120,7 @@ class ControlNode(Node):
         self.declare_parameter('debug_invert_roll', False)
         self.declare_parameter('debug_invert_pitch', False)
         self.declare_parameter('debug_invert_yaw', False)
-        self.declare_parameter('damping_sign', 1.0)
+        self.declare_parameter('damping_sign', DEFAULT_DAMPING_SIGN)
         self.declare_parameter('max_thruster_force_newton', DEFAULT_MAX_THRUSTER_FORCE)
         self.declare_parameter('manual_assisted.default_depth_target', DEFAULT_MANUAL_ASSISTED_DEPTH)
         self.declare_parameter('manual_assisted.min_depth_target', DEFAULT_MANUAL_ASSISTED_MIN_DEPTH)
@@ -206,9 +207,9 @@ class ControlNode(Node):
         self.lqr_solver = SubLQRSolver()
         if self.damping_sign not in (-1.0, 1.0):
             self.get_logger().warn(
-                f"Invalid damping_sign={self.damping_sign}. Using default +1.0. Allowed values are -1.0 or 1.0."
+                f"Invalid damping_sign={self.damping_sign}. Using default {DEFAULT_DAMPING_SIGN}. Allowed values are -1.0 or 1.0."
             )
-            self.damping_sign = 1.0
+            self.damping_sign = DEFAULT_DAMPING_SIGN
         if self.max_thruster_force_newton <= 0.0:
             self.get_logger().warn(
                 f"Invalid max_thruster_force_newton={self.max_thruster_force_newton}. Using default {DEFAULT_MAX_THRUSTER_FORCE}."

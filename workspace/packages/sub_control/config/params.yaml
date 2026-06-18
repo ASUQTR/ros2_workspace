@@ -6,8 +6,8 @@ control_node:
     
     # Q MATRIX (State Error Cost): Penalizes being away from the target.
     #  Higher Q = "Get to the target immediately." This increases overall output force.
-    #    - Position Q (Indices 0-2 -> x,z,z): Acts like a Spring. Pulls the Sub to the target.
-    #    - Angle Q (Indices 3-5 -> r,p,y): Acts like a Torsional Spring. Snaps heading.
+    #    - Position Q (Indices 0-2 -> x,y,z): Acts like a Spring. Pulls the Sub to the target.
+    #    - Angle Q (Indices 3-5 -> roll,pitch,yaw): Acts like a Torsional Spring. Snaps heading.
     #    - Velocity Q (Indices 6-11-> vx, vy, vz, vroll, vpitch, vyaw): Acts like a Damper (Shock Absorber). 
      #     High velocity Q forces the Sub to brake smoothly to avoid overshoot.
     state_cost_matrix: [1052.4762, 578.7808, 670.0731, 3134.6757, 3959.9523, 2453.9726, 265.1124, 303.5306, 204.2912, 12.3207, 19.8116, 12.2442]
@@ -18,6 +18,9 @@ control_node:
 
     # Hard software saturation for each thruster command in Newtons.
     max_thruster_force_newton: 14.4
+
+    # The A matrix stores damping as positive magnitudes; -1.0 makes it dissipative.
+    damping_sign: -1.0
 
     # Determines the minimum % at which joystick are detected.
     # 0.1 means 10% of the joystick will be ignored
