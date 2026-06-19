@@ -1254,6 +1254,10 @@
     });
 
     loadSettings();
+    if ((window.location.protocol === "http:" || window.location.protocol === "https:") && window.location.hostname) {
+      applyHost(window.location.hostname);
+      setTimeout(connect, 150);
+    }
     resetInputs();
     publishTimer = setInterval(loop, publishPeriodMs);
     setInterval(updatePublishRate, 1000);

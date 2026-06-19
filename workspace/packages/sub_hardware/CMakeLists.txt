@@ -26,6 +26,7 @@ install(PROGRAMS
   scripts/gpio_node.py
   scripts/indicator_node.py
   scripts/sonar_node.py
+  scripts/camera_dashboard_server.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -34,6 +35,7 @@ install(PROGRAMS
 install(DIRECTORY
   launch
   config
+  web
   DESTINATION share/${PROJECT_NAME}
 )
 

@@ -112,7 +112,7 @@ http://<JETSON_IP>
 The ROS workspace also includes a standalone operator UI for the `manual_assisted` control workflow:
 
 ```text
-tools/manual_assisted_dashboard.html
+workspace/packages/sub_hardware/web/manual_assisted_dashboard.html
 ```
 
 This dashboard connects to ROS through `rosbridge`, publishes `sensor_msgs/msg/Joy` on `/dashboard/gamepad`, and displays the camera endpoints exposed by the vision service.
@@ -123,7 +123,8 @@ For simulation or bench testing:
    ```bash
    ros2 launch sub_launch unity_sim.launch.yaml
    ```
-2. Open `tools/manual_assisted_dashboard.html` in a browser.
+2. Open the dashboard served by the camera service, or open
+   `workspace/packages/sub_hardware/web/manual_assisted_dashboard.html` locally.
 3. Use `Local` for a local simulation host or set the Jetson IP, then click `Connecter`.
 4. Confirm the control node receives joystick messages.
    ```bash
@@ -133,6 +134,42 @@ For simulation or bench testing:
 The dashboard expects ROSBridge on port `9090`. The gamepad mapping matches `workspace/packages/sub_control/scripts/control_node.py`: browser Back/Start are remapped to ROS button indices `6` and `7`, and the trigger axes are published as Joy axes `2` and `5`.
 
 Unity and the dashboard both connect as WebSocket clients to the same `rosbridge_websocket` server. They should both use `ws://<ROS_HOST>:9090`; do not start a second `rosbridge_websocket` on the same port.
+
+For an in-water manual-assisted test, launch the complete hardware, control,
+ROSBridge, dashboard, and camera stack with:
+
+```bash
+ros2 launch sub_launch manual_assisted_pool.launch.py
+```
+
+The default camera devices are indices `0` and `4`. Override them when needed:
+
+```bash
+ros2 launch sub_launch manual_assisted_pool.launch.py camera_1:=0 camera_2:=2
+```
+
+To save one JPEG every five frames from both streams:
+
+```bash
+ros2 launch sub_launch manual_assisted_pool.launch.py \
+  save_video:=true label:=pool-test-01
+```
+
+The dashboard is served on port `6969`. From the pilot laptop, an SSH tunnel is
+recommended so the page, ROSBridge, and browser gamepad are all accessed through
+localhost:
+
+```bash
+ssh -L 6969:127.0.0.1:6969 -L 9090:127.0.0.1:9090 asuqtr@<JETSON_IP>
+```
+
+Then open `http://localhost:6969/`. Before pressing Start, verify:
+
+```bash
+ros2 param get /control_node control_mode
+ros2 topic echo /dashboard/gamepad
+ros2 topic echo /odometry/filtered --once
+```
 
 To verify the Unity -> EKF path:
 
