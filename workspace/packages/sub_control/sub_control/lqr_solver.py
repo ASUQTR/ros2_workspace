@@ -62,6 +62,46 @@ Bm[11][1] = -0.39463536905835478514559256667363
 Bm[11][6] = -0.39463536905835478514559256667363
 Bm[11][7] = 0.39463536905835478514559256667363
 
+# ==============================================================================
+# UNITY-ALIGNED HYDRODYNAMIC FIT
+# ==============================================================================
+# Coefficients are positive magnitudes. `SubLQRSolver.damping_sign` applies the
+# dissipative sign at runtime, and the quadratic terms are SDRE-linearized using
+# the current state magnitude: d(v) = linear + quadratic * abs(v).
+#
+# Marine axes used by the LQR: surge u, sway v, heave w, roll p, pitch q, yaw r.
+# Unity mapping in the Hydrodynamics component:
+#   local X = sway, local Y = heave, local Z = surge
+#   angular X = pitch, angular Y = yaw, angular Z = roll
+HYDRO_LINEAR = {
+    "surge": 23.9201,
+    "sway": 43.6523,
+    "heave": 52.9362,
+    "roll": 1.0752,
+    "pitch": 1.4659,
+    "yaw": 1.3090,
+}
+
+HYDRO_QUADRATIC = {
+    "surge": 26.7035,
+    "sway": 80.1106,
+    "heave": 117.8097,
+    "roll": 3.1250,
+    "pitch": 5.0470,
+    "yaw": 2.9207,
+}
+
+# Effective masses/inertias aligned with the B matrix above. Translational values
+# include the Unity added-mass fit currently used in the simulator.
+EFFECTIVE_MASS = {
+    "surge": 0.7071067811865476 / 0.021117481435499889,
+    "sway": 0.7071067811865476 / 0.019022849240409055,
+    "heave": 1.0 / 0.026906434569178296,
+    "roll": 0.2725 / 0.47145328719723183,
+    "pitch": (1.4659 + 5.0470) / 9.789778396523997,
+    "yaw": (1.3090 + 2.9207) / 4.613927230130708,
+}
+
 
 # ==============================================================================
 # LQR SOLVER CLASS
@@ -223,6 +263,7 @@ class SubLQRSolver:
         Returns:
             np.ndarray: Evaluated 12x12 state-dependent dynamics matrix.
         """
+        Am.fill(0.0)
 
         # Extracting state's data. 
         # X and Y are locked to 0 because of "Translational Invariance" — hydrodynamic 
@@ -252,12 +293,19 @@ class SubLQRSolver:
         tan_pitch = math.tan(pitch_)
 
         # Unity-aligned hydrostatic fit. The scene uses mass=23.9 kg,
-        # displaced_volume=0.024 m^3, water_density=1000 kg/m^3, and CB-CG z-up
-        # offset of 0.02 m. The translational buoyancy imbalance is intentionally
-        # small because Unity is nearly neutrally buoyant.
-        net_buoyancy_accel = 0.0264
-        roll_restoring_accel = 8.144
-        pitch_restoring_accel = 7.296
+        # displaced_volume=0.024 m^3, water_density=1000 kg/m^3, and a CB-CG
+        # z-up offset near 0.05 m. Restoring signs below make roll/pitch stable.
+        net_buoyancy_accel = 0.026395212312363908
+        surge_buoyancy_coupling = 0.029301625584477216
+        roll_restoring_accel = 20.366782006920415
+        pitch_restoring_accel = 17.694924117348722
+
+        surge_damping = self._sdre_damping("surge", u)
+        sway_damping = self._sdre_damping("sway", v)
+        heave_damping = self._sdre_damping("heave", w)
+        roll_damping = self._sdre_damping("roll", p)
+        pitch_damping = self._sdre_damping("pitch", q)
+        yaw_damping = self._sdre_damping("yaw", r)
 
         # --- KINEMATIC COUPLING (Rows 0-5) ---
         # These rows represent standard rotation matrices defining how body-frame 
@@ -327,9 +375,9 @@ class SubLQRSolver:
 
         # Row 6: u_dot (Surge Acceleration)
         Am[6][0:4] = 0.0
-        Am[6][4] = net_buoyancy_accel * cos_pitch
+        Am[6][4] = surge_buoyancy_coupling * cos_pitch
         Am[6][5] = 0.0
-        Am[6][6] = self.damping_sign * 0.66339358229484093853735932809963
+        Am[6][6] = self.damping_sign * surge_damping
         Am[6][7] = 1.1101113807200520490365790644713 * r
         Am[6][8] = -1.1101113807200520490365790644713 * q
         Am[6][9] = 0.0
@@ -342,7 +390,7 @@ class SubLQRSolver:
         Am[7][4] = net_buoyancy_accel * sin_pitch * sin_roll
         Am[7][5] = 0.0
         Am[7][6] = -0.90081051087988085109735042490748 * r
-        Am[7][7] = self.damping_sign * 0.7501513957886908822554363410929
+        Am[7][7] = self.damping_sign * sway_damping
         Am[7][8] = p
         Am[7][9] = w
         Am[7][10] = 0.0
@@ -355,7 +403,7 @@ class SubLQRSolver:
         Am[8][5] = 0.0
         Am[8][6] = 0.90081051087988085109735042490748 * q
         Am[8][7] = -1.0 * p
-        Am[8][8] = self.damping_sign * 1.1338371527451733779857994050809
+        Am[8][8] = self.damping_sign * heave_damping
         Am[8][9] = -1.0 * v
         Am[8][10] = 0.90081051087988085109735042490748 * u
         Am[8][11] = 0.0
@@ -365,7 +413,7 @@ class SubLQRSolver:
         Am[9][3] = -roll_restoring_accel * cos_pitch * cos_roll
         Am[9][4] = roll_restoring_accel * sin_pitch * sin_roll
         Am[9][5:9] = 0.0
-        Am[9][9] = self.damping_sign * 2.802768166089965397923875432526
+        Am[9][9] = self.damping_sign * roll_damping
         Am[9][10] = -0.43503277217070903803294482236905 * r
         Am[9][11] = -0.43503277217070903803294482236905 * q
 
@@ -377,7 +425,7 @@ class SubLQRSolver:
         Am[10][7] = 0.0
         Am[10][8] = 5.5412526536013647028260744793525 * u
         Am[10][9] = 0.50914915170048566293331160158391 * r
-        Am[10][10] = self.damping_sign * 2.435081300552576468079646209727
+        Am[10][10] = self.damping_sign * pitch_damping
         Am[10][11] = 0.50914915170048566293331160158391 * p
 
         # Row 11: r_dot (Yaw Angular Acceleration)
@@ -387,9 +435,16 @@ class SubLQRSolver:
         Am[11][8] = 0.0
         Am[11][9] = -0.095203664338187202006697551579755 * q
         Am[11][10] = -0.095203664338187202006697551579755 * p
-        Am[11][11] = self.damping_sign * 1.7671612910636088319231574039434
+        Am[11][11] = self.damping_sign * yaw_damping
 
         return Am
+
+    def _sdre_damping(self, axis: str, velocity: float) -> float:
+        """Return state-dependent damping acceleration gain for one DOF."""
+        return (
+            HYDRO_LINEAR[axis]
+            + HYDRO_QUADRATIC[axis] * abs(float(velocity))
+        ) / EFFECTIVE_MASS[axis]
 
     def compute_thrust_force(self, state: np.ndarray, state_error: np.ndarray, 
                              q_matrix: np.ndarray, r_matrix: np.ndarray, 
