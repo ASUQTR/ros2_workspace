@@ -30,9 +30,9 @@ control_node:
     # Prototype MANUAL_ASSISTED mode:
     # joystick -> bounded target "carrot" -> LQR -> thrusters.
     manual_assisted:
-      default_depth_target: 0.5
-      min_depth_target: 0.2
-      max_depth_target: 1.0
+      default_depth_target: -0.5
+      min_depth_target: -1.0
+      max_depth_target: 0.0
       depth_step: 0.1
       max_depth_offset: 0.25
       max_carrot_distance: 0.35
