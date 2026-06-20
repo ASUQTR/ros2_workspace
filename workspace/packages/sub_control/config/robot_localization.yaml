@@ -72,6 +72,25 @@ ekf_filter_node:
     odom0_queue_size: 10
 
     # -----------------------------------------------------------
+    # Sensor 3: Sonar-based Position (geometry_msgs/msg/PoseWithCovarianceStamped)
+    # Provides x,y position estimates from wall distance triangulation
+    # -----------------------------------------------------------
+    pose0: pose_estimate
+
+    # [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+    # Only trust x, y position; sonar provides no orientation or velocity
+    pose0_config: [true,  true,  false,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+
+    pose0_nodelay: false
+    pose0_differential: false
+    pose0_relative: false
+    pose0_queue_size: 10
+
+    # -----------------------------------------------------------
     # Covariance Matrices
     # -----------------------------------------------------------
     dynamic_process_noise_covariance: true

@@ -1,0 +1,5 @@
+uint8 start_angle
+uint8 stop_angle
+uint8 desired_range
+---
+sensor_msgs/MultiEchoLaserScan data

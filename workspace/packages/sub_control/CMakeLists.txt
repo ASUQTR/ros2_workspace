@@ -21,6 +21,8 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/control_node.py
   scripts/lqr_tuning.py
+  scripts/sonar_localization.py
+  scripts/example_mission_manager.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

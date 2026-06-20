@@ -1,6 +1,0 @@
-uint16 start_angle
-uint16 stop_angle
-uint16 increment
-uint16 delay
----
-sensor_msgs/MultiEchoLaserScan data

@@ -40,10 +40,4 @@ sonar_node:
     # Define speed of sound in pure water (m/s)
     speed_of_sound: 1481
 
-    # Define range (m)
-    ping_range: 50
-
-    # Execution modes (possibilities are: sending image and/or sending raw data and/or service exposition)
-    mode: "automatic"  # [automatic, service]
-    image_send_mode: true
-    raw_data_send_mode: true
+    
