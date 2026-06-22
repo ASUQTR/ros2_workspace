@@ -152,6 +152,13 @@ Vectornav::Vectornav(const rclcpp::NodeOptions & options) : Node("vectornav", op
      0.0, 0.0, 1.0});
   declare_parameter<std::vector<double>>("accelCompensation.B", {0.0, 0.0, 0.0});
 
+  // Reference Frame Rotation (Register 26, section 7.2.4)
+  // Default is identity (no correction). Override via YAML referenceFrameRotation.C
+  declare_parameter<std::vector<double>>("referenceFrameRotation.C",
+    {1.0, 0.0, 0.0,
+     0.0, 1.0, 0.0,
+     0.0, 0.0, 1.0});
+
   // Message Header
   declare_parameter<std::string>("frame_id", "vectornav");
 
@@ -676,6 +683,25 @@ bool Vectornav::configure_sensor()
     vs_->writeAccelerationCompensation(accelC, accelB);
     RCLCPP_INFO(get_logger(), "Accel compensation C[2][2] = %.4f, B = (%.4f, %.4f, %.4f)",
       C[8], B[0], B[1], B[2]);
+  }
+
+  // Reference Frame Rotation (Register 26, section 7.2.4)
+  {
+    auto hw = vs_->readReferenceFrameRotation();
+    RCLCPP_INFO(get_logger(),
+      "ReferenceFrameRotation (hardware): [%.3f %.3f %.3f | %.3f %.3f %.3f | %.3f %.3f %.3f]",
+      hw(0,0), hw(0,1), hw(0,2),
+      hw(1,0), hw(1,1), hw(1,2),
+      hw(2,0), hw(2,1), hw(2,2));
+
+    auto C = get_parameter("referenceFrameRotation.C").as_double_array();
+    vn::math::mat3f rfr(C[0], C[1], C[2],
+                        C[3], C[4], C[5],
+                        C[6], C[7], C[8]);
+    vs_->writeReferenceFrameRotation(rfr);
+    RCLCPP_INFO(get_logger(),
+      "ReferenceFrameRotation (applied):  [%.3f %.3f %.3f | %.3f %.3f %.3f | %.3f %.3f %.3f]",
+      C[0], C[1], C[2], C[3], C[4], C[5], C[6], C[7], C[8]);
   }
 
   // Verify that the device family is capable of supporting GPS
