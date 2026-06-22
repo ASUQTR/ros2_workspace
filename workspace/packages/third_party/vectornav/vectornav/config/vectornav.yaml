@@ -79,9 +79,11 @@ vn_sensor_msgs:
     angular_velocity_covariance: [0.01,  0.0,   0.0,
                          0.0,   0.01,  0.0,
                          0.0,   0.0,   0.01]
-    linear_acceleration_covariance: [0.01,  0.0,   0.0,
-                         0.0,   0.01,  0.0,
-                         0.0,   0.0,   0.01]
+    # Measured empirically: sub stationary on flat surface, 3000 samples at 100Hz (30s), VN-100 internal filtering active.
+    # σ²: ax=6.6e-5, ay=5.7e-5, az=1.2e-4 (m/s²)². az higher due to residual Z-axis noise post accel compensation.
+    linear_acceleration_covariance: [6.6e-5, 0.0,    0.0,
+                                     0.0,    5.7e-5, 0.0,
+                                     0.0,    0.0,    1.2e-4]
     magnetic_covariance: [0.01,  0.0,   0.0,
                          0.0,   0.01,  0.0,
                          0.0,   0.0,   0.01]
