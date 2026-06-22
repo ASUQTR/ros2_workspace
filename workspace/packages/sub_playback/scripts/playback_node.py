@@ -8,8 +8,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
 
-from nav_msgs.msg import Odometry
-
+from sub_interfaces.msg import ControlTarget
 from sub_interfaces.srv import PlaybackRecording, PlaybackPath
 
 class PlaybackNode(Node):
@@ -19,10 +18,11 @@ class PlaybackNode(Node):
 
         self.waypoint_timing = cast(
             float,
-            self.declare_parameter('waypoint_timing', 5.0).value
+            self.declare_parameter('waypoint_timing', 0.2).value
         )
         self.waypoints: list[dict] = []
         self.last_clock = None
+        self.recording_started_at = None
         self.is_recording = False
 
         self.playback_service = self.create_service(
@@ -42,10 +42,10 @@ class PlaybackNode(Node):
             durability=QoSDurabilityPolicy.VOLATILE
         )
         
-        self.localization_cb_group = MutuallyExclusiveCallbackGroup()
-        self.localization_subscription = self.create_subscription(
-            Odometry, 'odometry/filtered', self.localization_callback, only_latest_qos,
-            callback_group=self.localization_cb_group
+        self.target_cb_group = MutuallyExclusiveCallbackGroup()
+        self.target_subscription = self.create_subscription(
+            ControlTarget, 'control/target', self.target_callback, only_latest_qos,
+            callback_group=self.target_cb_group
         )
 
     def handle_playback_recording(self, request, response):
@@ -107,19 +107,23 @@ class PlaybackNode(Node):
         self.get_logger().info('Starting waypoint recording...')
         self.waypoints.clear()
         self.last_clock = self.get_clock().now()
+        self.recording_started_at = self.last_clock
         self.is_recording = True
 
     def stop_recording(self):
         self.get_logger().info('Stopping waypoint recording...')
         self.last_clock = None
+        self.recording_started_at = None
         self.is_recording = False
 
-    def localization_callback(self, msg):
+    def target_callback(self, msg):
         if not self.is_recording:
             return
 
         if msg is None:
-            self.get_logger().warning('Received None message in localization callback')
+            self.get_logger().warning('Received None message in target callback')
+            return
+        if msg.source_mode != 'manual_assisted':
             return
 
         current_time = self.get_clock().now()
@@ -131,14 +135,25 @@ class PlaybackNode(Node):
         if time_diff < self.waypoint_timing:
             return
 
-        x = msg.pose.pose.position.x
-        y = msg.pose.pose.position.y
-        z = msg.pose.pose.position.z
-        q = msg.pose.pose.orientation
+        x = msg.pose.position.x
+        y = msg.pose.position.y
+        z = msg.pose.position.z
+        q = msg.pose.orientation
+        linear = msg.twist.linear
+        angular = msg.twist.angular
+        elapsed = 0.0
+        if self.recording_started_at is not None:
+            elapsed = (current_time - self.recording_started_at).nanoseconds / 1e9
 
         waypoint = {
+            'time_from_start': elapsed,
+            'frame_id': msg.header.frame_id,
+            'source_mode': msg.source_mode,
             'position': [x, y, z],
-            'angles': [q.x, q.y, q.z, q.w]
+            'angles': [q.x, q.y, q.z, q.w],
+            'linear_velocity': [linear.x, linear.y, linear.z],
+            'angular_velocity': [angular.x, angular.y, angular.z],
+            'carrot_body': [msg.carrot_forward, msg.carrot_right]
         }
         self.waypoints.append(waypoint)
         self.last_clock = current_time

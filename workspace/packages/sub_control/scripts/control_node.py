@@ -37,7 +37,7 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Joy
 from std_msgs.msg import Float64MultiArray
 from std_msgs.msg import Bool
-from sub_interfaces.msg import ThrusterCommand
+from sub_interfaces.msg import ControlTarget, ThrusterCommand
 from sub_interfaces.action import Control
 import tf2_ros
 
@@ -283,6 +283,9 @@ class ControlNode(Node):
         )
         self.manual_assisted_debug_pub = self.create_publisher(
             Float64MultiArray, 'debug/manual_assisted', only_latest_qos
+        )
+        self.control_target_pub = self.create_publisher(
+            ControlTarget, 'control/target', only_latest_qos
         )
 
         # --- Action Server ---
@@ -543,6 +546,9 @@ class ControlNode(Node):
             # Copy to local thread-safe variable for math below so the Action Server
             # doesn't overwrite the memory addresses mid-calculation.
             target_state_copy = self.target_state.copy()
+
+        if self._current_mode == ControlMode.MANUAL_ASSISTED:
+            self._publish_manual_assisted_target(target_state_copy, msg.header.stamp)
 
         if self.software_kill_active:
             self._publish_zero_thrust()
@@ -1093,6 +1099,38 @@ class ControlNode(Node):
         ]
         self.manual_assisted_debug_pub.publish(dbg)
 
+    def _publish_manual_assisted_target(self, target_state, stamp):
+        """Publish the LQR carrot in ROS ENU/FLU coordinates for recording."""
+        if np.isnan(target_state[0]):
+            return
+
+        roll_flu = target_state[3]
+        pitch_flu = -target_state[4]
+        yaw_flu = (math.pi / 2.0) - target_state[5]
+        yaw_flu = (yaw_flu + math.pi) % (2 * math.pi) - math.pi
+        qx, qy, qz, qw = self.euler_to_quaternion(roll_flu, pitch_flu, yaw_flu)
+
+        msg = ControlTarget()
+        msg.header.stamp = stamp
+        msg.header.frame_id = self.global_reference_frame
+        msg.source_mode = 'manual_assisted'
+        msg.pose.position.x = float(target_state[1])
+        msg.pose.position.y = float(target_state[0])
+        msg.pose.position.z = float(-target_state[2])
+        msg.pose.orientation.x = qx
+        msg.pose.orientation.y = qy
+        msg.pose.orientation.z = qz
+        msg.pose.orientation.w = qw
+        msg.twist.linear.x = float(target_state[6])
+        msg.twist.linear.y = float(-target_state[7])
+        msg.twist.linear.z = float(-target_state[8])
+        msg.twist.angular.x = float(target_state[9])
+        msg.twist.angular.y = float(-target_state[10])
+        msg.twist.angular.z = float(-target_state[11])
+        msg.carrot_forward = float(self.manual_assisted_carrot_body[0])
+        msg.carrot_right = float(-self.manual_assisted_carrot_body[1])
+        self.control_target_pub.publish(msg)
+
     def _apply_manual_assisted_timeout(self):
         """Hold position if gamepad updates stop. Caller holds target_state_lock."""
         now = self._now_seconds()
@@ -1172,6 +1210,22 @@ class ControlNode(Node):
         return 0 if (-DEFAULT_JOY_DEAD_ZONE <= joystick <= DEFAULT_JOY_DEAD_ZONE) else joystick
 
     
+    @staticmethod
+    def euler_to_quaternion(roll, pitch, yaw):
+        """Convert standard ROS roll, pitch and yaw angles to a quaternion."""
+        cy = math.cos(yaw * 0.5)
+        sy = math.sin(yaw * 0.5)
+        cp = math.cos(pitch * 0.5)
+        sp = math.sin(pitch * 0.5)
+        cr = math.cos(roll * 0.5)
+        sr = math.sin(roll * 0.5)
+        return (
+            sr * cp * cy - cr * sp * sy,
+            cr * sp * cy + sr * cp * sy,
+            cr * cp * sy - sr * sp * cy,
+            cr * cp * cy + sr * sp * sy
+        )
+
     @staticmethod
     def quaternion_to_euler(x, y, z, w):
         """

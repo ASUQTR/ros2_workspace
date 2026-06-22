@@ -15,6 +15,7 @@ find_package(sensor_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ThrusterCommand.msg"
   "msg/LedCommand.msg"
+  "msg/ControlTarget.msg"
   "srv/PlaybackPath.srv"
   "srv/PlaybackRecording.srv"
   "srv/SonarScan.srv"
