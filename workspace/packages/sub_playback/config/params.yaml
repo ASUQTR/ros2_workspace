@@ -1,0 +1,3 @@
+playback_node:
+  ros__parameters:
+    waypoint_timing: 5.0  # seconds to wait at each waypoint
