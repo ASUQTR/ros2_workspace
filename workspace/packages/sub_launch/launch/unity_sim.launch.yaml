@@ -56,3 +56,13 @@ launch:
       param:
         - name: "port"
           value: 9090
+
+  - node:
+      pkg: "sub_playback"
+      exec: "playback_node.py"
+      name: "playback_node"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share sub_playback)/config/params.yaml"
+        - name: "use_sim_time"
+          value: true

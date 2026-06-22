@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 from typing import cast
-import math
 import json
 
 import rclpy
@@ -14,20 +13,17 @@ from nav_msgs.msg import Odometry
 from sub_interfaces.srv import PlaybackRecording, PlaybackPath
 
 class PlaybackNode(Node):
-    # Parameters
-    waypoint_timing: float = 5.0  # seconds
-
-    # Each waypoint is a dict: {"position": [x,y,z], "angles": [roll,pitch,yaw]}
-    waypoints: list[dict] = []
-    last_clock = None
-    is_playback_running = False
-
     def __init__(self):
         super().__init__('playback_node')
         self.get_logger().info('PlaybackNode has been started.')
 
-        # Retrieve parameters
-        self.waypoint_timing = cast(float, self.declare_parameter('waypoint_timing', self.waypoint_timing).value)
+        self.waypoint_timing = cast(
+            float,
+            self.declare_parameter('waypoint_timing', 5.0).value
+        )
+        self.waypoints: list[dict] = []
+        self.last_clock = None
+        self.is_recording = False
 
         self.playback_service = self.create_service(
             PlaybackRecording,
@@ -53,13 +49,14 @@ class PlaybackNode(Node):
         )
 
     def handle_playback_recording(self, request, response):
-        self.get_logger().info(f'Playback request received: start_recording={request.start_recording}')
+        self.get_logger().info(
+            f'Recording request received: start_recording={request.start_recording}'
+        )
         
         if request.start_recording:
             self.start_recording()
             response.success = True
         else:
-            # Stop and dump waypoints to a uniquely named json file based on node clock
             self.stop_recording()
 
             now_msg = self.get_clock().now().to_msg()
@@ -68,11 +65,12 @@ class PlaybackNode(Node):
                 with open(filename, 'w') as f:
                     json.dump(self.waypoints, f, indent=4)
                 self.get_logger().info(f'Waypoints dumped to {filename}')
+                response.success = True
             except Exception as e:
                 self.get_logger().error(f'Failed to write waypoints to {filename}: {e}')
+                response.success = False
 
             self.waypoints.clear()
-            response.success = False
 
         return response
     
@@ -106,17 +104,18 @@ class PlaybackNode(Node):
         return response
     
     def start_recording(self):
-        self.get_logger().info('Starting playback...')
+        self.get_logger().info('Starting waypoint recording...')
+        self.waypoints.clear()
         self.last_clock = self.get_clock().now()
-        self.is_playback_running = True
+        self.is_recording = True
 
     def stop_recording(self):
-        self.get_logger().info('Stopping playback...')
+        self.get_logger().info('Stopping waypoint recording...')
         self.last_clock = None
-        self.is_playback_running = False
+        self.is_recording = False
 
     def localization_callback(self, msg):
-        if not self.is_playback_running:
+        if not self.is_recording:
             return
 
         if msg is None:
@@ -128,8 +127,6 @@ class PlaybackNode(Node):
             time_diff = float('inf')
         else:
             time_diff = (current_time - self.last_clock).nanoseconds / 1e9
-            self.get_logger().info(f'Time since last localization update: {time_diff:.2f} seconds')
-            self.get_logger().info(f'Current time: {current_time.to_msg().sec}.{current_time.to_msg().nanosec}, Last clock: {self.last_clock.to_msg().sec}.{self.last_clock.to_msg().nanosec}')
 
         if time_diff < self.waypoint_timing:
             return
@@ -146,7 +143,10 @@ class PlaybackNode(Node):
         self.waypoints.append(waypoint)
         self.last_clock = current_time
 
-        self.get_logger().info(f'Received localization update: position=({x}, {y}, {z}), angles=(x={q.x:.3f}, y={q.y:.3f}, z={q.z:.3f}, w={q.w:.3f})')
+        self.get_logger().info(
+            f'Recorded waypoint {len(self.waypoints)}: '
+            f'position=({x:.3f}, {y:.3f}, {z:.3f})'
+        )
 
 
 def main(args=None):

@@ -725,7 +725,7 @@
               <div id="ageMetric" class="metric-value">-</div>
             </div>
           </div>
-          <div class="tiny">Start envoie la demande de changement de mode. Select active l'arret logiciel via disable_pwm. Record est un controle HMI temporaire sans effet ROS.</div>
+          <div class="tiny">Start envoie la demande de changement de mode. Select active l'arret logiciel via disable_pwm. Record demarre ou arrete l'enregistrement des waypoints.</div>
         </div>
       </section>
     </aside>
@@ -844,7 +844,8 @@
     let lastJoyAt = 0;
     let manualAssistedDebug = null;
     let selectedModeRequest = "Start envoye";
-    let fakeRecordEnabled = false;
+    let recordEnabled = false;
+    let recordRequestPending = false;
 
     const el = {
       jetsonIp: document.getElementById("jetsonIp"),
@@ -1019,6 +1020,13 @@
           const data = JSON.parse(event.data);
           if (data.topic === debugTopic) {
             manualAssistedDebug = data.msg;
+          } else if (data.op === "service_response" && data.service === "/playback_recording") {
+            recordRequestPending = false;
+            if (data.result === false || !data.values || !data.values.success) {
+              recordEnabled = !recordEnabled;
+              console.warn("Playback recording service rejected the request", data);
+            }
+            updateRecordButton();
           }
         } catch (error) {
           console.warn("Invalid rosbridge message", error);
@@ -1196,13 +1204,45 @@
       }, 120);
     }
 
+    function updateRecordButton() {
+      el.recordBtn.classList.toggle("active", recordEnabled);
+      el.recordBtn.disabled = recordRequestPending;
+      if (recordRequestPending) {
+        el.recordBtn.textContent = "En attente";
+      } else {
+        el.recordBtn.textContent = recordEnabled ? "Arreter" : "Record";
+      }
+    }
+
+    function toggleRecording() {
+      if (recordRequestPending) return;
+
+      const requestedState = !recordEnabled;
+      const sent = send({
+        op: "call_service",
+        id: "playback-recording-" + Date.now(),
+        service: "/playback_recording",
+        type: "sub_interfaces/srv/PlaybackRecording",
+        args: { start_recording: requestedState }
+      });
+      if (!sent) {
+        console.warn("ROS bridge is not connected; recording request not sent");
+        return;
+      }
+
+      recordEnabled = requestedState;
+      recordRequestPending = true;
+      updateRecordButton();
+    }
+
     function updateDebug() {
       const age = lastJoyAt ? ((Date.now() - lastJoyAt) / 1000).toFixed(1) + "s" : "-";
       el.ageMetric.textContent = age;
       el.debug.textContent = JSON.stringify({
         rosbridge: Boolean(ws && ws.readyState === WebSocket.OPEN),
         topic: joyTopic,
-        fakeRecordEnabled,
+        recordEnabled,
+        recordRequestPending,
         lastJoy,
         manualAssistedDebug
       }, null, 2);
@@ -1227,11 +1267,7 @@
     document.getElementById("jetsonBtn").addEventListener("click", () => applyHost("192.168.0.10"));
     document.getElementById("armBtn").addEventListener("click", () => sendSynthetic(7));
     document.getElementById("stopBtn").addEventListener("click", () => sendSynthetic(6));
-    document.getElementById("recordBtn").addEventListener("click", () => {
-      fakeRecordEnabled = !fakeRecordEnabled;
-      el.recordBtn.classList.toggle("active", fakeRecordEnabled);
-      el.recordBtn.textContent = fakeRecordEnabled ? "Record armed" : "Record";
-    });
+    document.getElementById("recordBtn").addEventListener("click", toggleRecording);
     document.getElementById("reloadCamerasBtn").addEventListener("click", () => reloadCameras());
     document.getElementById("clearDebugBtn").addEventListener("click", () => {
       lastJoy = null;
