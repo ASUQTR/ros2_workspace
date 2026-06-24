@@ -19,6 +19,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import TwistWithCovarianceStamped, PoseStamped
 from sensor_msgs.msg import Imu
+from std_msgs.msg import Float64
 
 
 def _euler_to_quaternion(roll_rad: float, pitch_rad: float, yaw_rad: float) -> tuple[float, float, float, float]:
@@ -84,6 +85,7 @@ class DVLNode(Node):
         self.velocities_pub = self.create_publisher(TwistWithCovarianceStamped, 'dvl/velocities', 10)
         self.altitude_pub = self.create_publisher(PoseStamped, 'dvl/altitude', 10)
         self.orientation_pub = self.create_publisher(Imu, 'dvl/orientation', 10)
+        self.heading_raw_pub = self.create_publisher(Float64, 'dvl/heading_raw', 10)
         
         # State variables
         self.invalid_velocity_count = 0
@@ -250,6 +252,12 @@ class DVLNode(Node):
         roll_deg = float(fields[6])
         pitch_deg = float(fields[7])
         yaw_deg   = float(fields[8])
+
+        # Publish raw heading (degrees, magnetic north, no corrections)
+        # Use this to measure hard-iron offset and declination during calibration.
+        raw_msg = Float64()
+        raw_msg.data = yaw_deg
+        self.heading_raw_pub.publish(raw_msg)
 
         # ---------------------------------------------------------
         # Calibration corrections (applied before frame conversion)
