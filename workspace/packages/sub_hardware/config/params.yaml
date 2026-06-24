@@ -15,7 +15,17 @@ actuator_node:
 dvl_node:
   ros__parameters:
     # DVL A50 parameters
-    serial_port_name : "/dev/ttyTHS0" # Default Xavier name is ttyTHS0 for DVL serial
+    serial_port_name: "/dev/ttyTHS0" # Default Xavier name is ttyTHS0 for DVL serial
+
+    # Magnetic declination for the competition venue (degrees, West = negative).
+    # Look up at https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml
+    # Example: Robonation venues in Gulf Coast area ≈ -1.5° to -3.0°
+    heading_declination_deg: 0.0
+
+    # Hard-iron calibration offset (degrees).
+    # Run the 360° rotation test with ALL electronics powered, then set:
+    #   heading_hard_iron_offset_deg = mean(true_heading - dvl_heading) over full rotation
+    heading_hard_iron_offset_deg: 0.0
 
 gpio_node:
   ros__parameters:

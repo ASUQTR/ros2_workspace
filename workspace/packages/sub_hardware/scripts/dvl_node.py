@@ -5,9 +5,10 @@ ASUQTR Sub's ROS 2 DVL Node
 ================================================================================
 Interfaces with the Water Linked DVL-A50 via serial, parses the NMEA-style
 acoustic protocol, translates NED velocities to ROS-standard FLU, and publishes
-odometry/altitude data.
+odometry/altitude/heading data.
 """
 from __future__ import annotations
+import math
 import serial
 import threading
 import crcmod
@@ -17,6 +18,20 @@ from collections.abc import Callable
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import TwistWithCovarianceStamped, PoseStamped
+from sensor_msgs.msg import Imu
+
+
+def _euler_to_quaternion(roll_rad: float, pitch_rad: float, yaw_rad: float) -> tuple[float, float, float, float]:
+    """Converts ZYX Euler angles (rad) to quaternion (x, y, z, w)."""
+    cr, sr = math.cos(roll_rad / 2.0), math.sin(roll_rad / 2.0)
+    cp, sp = math.cos(pitch_rad / 2.0), math.sin(pitch_rad / 2.0)
+    cy, sy = math.cos(yaw_rad / 2.0), math.sin(yaw_rad / 2.0)
+    return (
+        sr * cp * cy - cr * sp * sy,  # x
+        cr * sp * cy + sr * cp * sy,  # y
+        cr * cp * sy - sr * sp * cy,  # z
+        cr * cp * cy + sr * sp * sy,  # w
+    )
 
 
 # ==========================================
@@ -32,11 +47,15 @@ EXPECTED_FIRMWARE_VERSION = (2, 6, 4)
 
 class DVLProtocolHeader(str, Enum):
     """Protocol header prefixes sent by the DVL."""
-    VELOCITY_REPORT = 'wrz'
-    PROTOCOL_VERSION = 'wrv'
-    PRODUCT_DETAILS = 'wrw'
-    BAD_REQUEST = 'wr?'
-    BAD_CHECKSUM = 'wr!'
+    VELOCITY_REPORT      = 'wrz'  # bottom-tracking velocity + altitude
+    DEAD_RECKONING       = 'wrp'  # position + roll/pitch/yaw at 5 Hz
+    TRANSDUCER_REPORT    = 'wru'  # per-beam: velocity, distance, rssi, nsd
+    PROTOCOL_VERSION     = 'wrv'
+    PRODUCT_DETAILS      = 'wrw'
+    ACK                  = 'wra'  # positive acknowledgement (wcr, wcg, wcs, …)
+    NAK                  = 'wrn'  # negative acknowledgement
+    BAD_REQUEST          = 'wr?'
+    BAD_CHECKSUM         = 'wr!'
 
 
 class DVLNode(Node):
@@ -50,6 +69,12 @@ class DVLNode(Node):
         
         # ROS 2 Parameters
         port_name = self.declare_parameter('serial_port_name', DEFAULT_DVL_PORT_NAME).value
+        # Magnetic declination for the competition venue (degrees, West = negative).
+        # Look up at: https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml
+        self._declination_deg = self.declare_parameter('heading_declination_deg', 0.0).value
+        # Additional hard-iron calibration offset (degrees). Determined by the
+        # 360° rotation test with all electronics powered.
+        self._hard_iron_offset_deg = self.declare_parameter('heading_hard_iron_offset_deg', 0.0).value
         
         # Hardware setup
         self.crc: Callable[[bytes], int] = crcmod.predefined.mkPredefinedCrcFun('crc-8')
@@ -58,6 +83,7 @@ class DVLNode(Node):
         # Publishers
         self.velocities_pub = self.create_publisher(TwistWithCovarianceStamped, 'dvl/velocities', 10)
         self.altitude_pub = self.create_publisher(PoseStamped, 'dvl/altitude', 10)
+        self.orientation_pub = self.create_publisher(Imu, 'dvl/orientation', 10)
         
         # State variables
         self.invalid_velocity_count = 0
@@ -113,14 +139,19 @@ class DVLNode(Node):
             # Route to appropriate handler
             if header == DVLProtocolHeader.VELOCITY_REPORT:
                 self._handle_velocity_report(fields)
+            elif header == DVLProtocolHeader.DEAD_RECKONING:
+                self._handle_dead_reckoning_report(fields)
             elif header == DVLProtocolHeader.PROTOCOL_VERSION:
                 self._handle_protocol_version(fields)
             elif header == DVLProtocolHeader.PRODUCT_DETAILS:
                 self._handle_product_details(fields)
+            elif header == DVLProtocolHeader.NAK:
+                self.get_logger().warn('DVL command not acknowledged (NAK)')
             elif header == DVLProtocolHeader.BAD_CHECKSUM:
                 self.get_logger().warn('DVL rejected command: Bad Checksum')
             elif header == DVLProtocolHeader.BAD_REQUEST:
                 self.get_logger().warn('DVL rejected command: Unknown Request')
+            # ACK (wra) and TRANSDUCER_REPORT (wru) are intentionally ignored
 
         except UnicodeDecodeError:
             self.get_logger().warn("Received non-UTF-8 bytes from DVL.")
@@ -154,7 +185,9 @@ class DVLNode(Node):
         covariances = [float(c) for c in fields[7].split(';')]
 
         # ---------------------------------------------------------
-        # Velocity Translation: North-East-Down (NED) to Forward-Left-Up (FLU)
+        # Velocity Translation: DVL body frame (FRD) → ROS body frame (FLU)
+        # DVL wrz reports vx/vy/vz in its own body frame: X=forward, Y=starboard, Z=down.
+        # ROS convention is FLU (X=forward, Y=port, Z=up), so Y and Z are negated.
         # ---------------------------------------------------------
         flu_vx = raw_vx
         flu_vy = -raw_vy
@@ -198,6 +231,64 @@ class DVLNode(Node):
         pose_msg.pose.position.z = altitude
         self.altitude_pub.publish(pose_msg)
 
+
+    def _handle_dead_reckoning_report(self, fields: list[str]):
+        """
+        Parses 'wrp' dead reckoning payload and publishes heading as sensor_msgs/Imu.
+
+        Format per protocol doc (10 fields):
+          wrp, time_stamp, x,   y,   z,   pos_std, roll,  pitch, yaw,  status
+          [0]  [1]         [2]  [3]  [4]  [5]      [6]    [7]    [8]   [9]
+
+        Roll/pitch/yaw come from the DVL's internal AHRS (gyro + magnetometer).
+        Yaw is the heading of the DVL X-axis in degrees, CW from magnetic North.
+        Update rate: 5 Hz.
+        """
+        if len(fields) < 9:
+            return
+
+        roll_deg = float(fields[6])
+        pitch_deg = float(fields[7])
+        yaw_deg   = float(fields[8])
+
+        # ---------------------------------------------------------
+        # Calibration corrections (applied before frame conversion)
+        #   1. Hard iron bias (rotation-test calibration, sub-specific)
+        #   2. Magnetic declination (venue-specific, West = negative)
+        # ---------------------------------------------------------
+        yaw_deg = (yaw_deg + self._hard_iron_offset_deg + self._declination_deg) % 360.0
+
+        # ---------------------------------------------------------
+        # Frame conversion: NED (heading CW from North) → ENU yaw
+        #   ENU yaw = 90° − NED heading
+        # ---------------------------------------------------------
+        enu_yaw   = math.pi / 2.0 - math.radians(yaw_deg)
+        roll_rad  = math.radians(roll_deg)
+        pitch_rad = -math.radians(pitch_deg)  # DVL Y=starboard; ROS FLU Y=port, so pitch sign flips
+
+        qx, qy, qz, qw = _euler_to_quaternion(roll_rad, pitch_rad, enu_yaw)
+
+        msg = Imu()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'dvl_link'
+
+        msg.orientation.x = qx
+        msg.orientation.y = qy
+        msg.orientation.z = qz
+        msg.orientation.w = qw
+
+        # DVL-A50 heading accuracy ~±5° (0.087 rad), variance ≈ 0.0076 rad²
+        # Roll/pitch from DVL MEMS are noisier; use a conservative 0.02 rad²
+        msg.orientation_covariance = [
+            0.02,  0.0,   0.0,
+            0.0,   0.02,  0.0,
+            0.0,   0.0,   0.0076,
+        ]
+        # DVL does not provide angular velocity or linear acceleration
+        msg.angular_velocity_covariance[0] = -1.0
+        msg.linear_acceleration_covariance[0] = -1.0
+
+        self.orientation_pub.publish(msg)
 
     def _handle_protocol_version(self, fields: list[str]):
         """Validates 'wrv' payload against required minimums."""
