@@ -9,7 +9,7 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
 
 from sub_interfaces.msg import ControlTarget
-from sub_interfaces.srv import PlaybackRecording, PlaybackPath
+from sub_interfaces.srv import PlaybackCommand, PlaybackRecording, PlaybackPath
 
 class PlaybackNode(Node):
     def __init__(self):
@@ -24,6 +24,12 @@ class PlaybackNode(Node):
         self.last_clock = None
         self.recording_started_at = None
         self.is_recording = False
+        self.loaded_waypoints: list[dict] = []
+        self.loaded_file_path = ''
+        self.is_playing = False
+        self.playback_loop = False
+        self.playback_started_at = None
+        self.playback_index = 0
 
         self.playback_service = self.create_service(
             PlaybackRecording,
@@ -34,6 +40,11 @@ class PlaybackNode(Node):
             PlaybackPath,
             'playback_path',
             self.handle_playback_path
+        )
+        self.playback_command_service = self.create_service(
+            PlaybackCommand,
+            'playback_command',
+            self.handle_playback_command
         )
 
         only_latest_qos = QoSProfile(
@@ -47,6 +58,10 @@ class PlaybackNode(Node):
             ControlTarget, 'control/target', self.target_callback, only_latest_qos,
             callback_group=self.target_cb_group
         )
+        self.playback_target_pub = self.create_publisher(
+            ControlTarget, 'control/playback_target', only_latest_qos
+        )
+        self.playback_timer = self.create_timer(0.05, self.playback_timer_callback)
 
     def handle_playback_recording(self, request, response):
         self.get_logger().info(
@@ -61,10 +76,13 @@ class PlaybackNode(Node):
 
             now_msg = self.get_clock().now().to_msg()
             filename = f'/tmp/waypoints_{now_msg.sec}_{now_msg.nanosec}.json'
+            latest_filename = '/tmp/waypoints_latest.json'
             try:
                 with open(filename, 'w') as f:
                     json.dump(self.waypoints, f, indent=4)
-                self.get_logger().info(f'Waypoints dumped to {filename}')
+                with open(latest_filename, 'w') as f:
+                    json.dump(self.waypoints, f, indent=4)
+                self.get_logger().info(f'Waypoints dumped to {filename} and {latest_filename}')
                 response.success = True
             except Exception as e:
                 self.get_logger().error(f'Failed to write waypoints to {filename}: {e}')
@@ -73,6 +91,165 @@ class PlaybackNode(Node):
             self.waypoints.clear()
 
         return response
+
+    def handle_playback_command(self, request, response):
+        command = request.command.strip().lower()
+        if command == 'load':
+            success, message = self.load_playback_file(request.file_path)
+        elif command == 'play':
+            request_file_path = request.file_path.strip()
+            if request_file_path and request_file_path.lower() != 'none':
+                success, message = self.load_playback_file(request.file_path)
+                if not success:
+                    response.success = False
+                    response.message = message
+                    response.waypoint_count = len(self.loaded_waypoints)
+                    return response
+            success, message = self.start_playback(loop=request.loop)
+        elif command == 'stop':
+            self.stop_playback()
+            success = True
+            message = 'Playback stopped'
+        else:
+            success = False
+            message = f'Unknown playback command: {request.command}'
+
+        response.success = success
+        response.message = message
+        response.waypoint_count = len(self.loaded_waypoints)
+        return response
+
+    def load_playback_file(self, file_path):
+        clean_path = file_path.strip()
+        if not clean_path:
+            return False, 'No JSON file path provided'
+
+        try:
+            with open(clean_path, 'r') as f:
+                data = json.load(f)
+        except Exception as e:
+            return False, f'Failed to read {clean_path}: {e}'
+
+        if not isinstance(data, list):
+            return False, 'Playback JSON must contain a list of waypoints'
+
+        waypoints = []
+        for idx, item in enumerate(data):
+            try:
+                waypoints.append(self.normalize_waypoint(item, idx))
+            except Exception as e:
+                return False, f'Invalid waypoint {idx}: {e}'
+
+        self.loaded_waypoints = waypoints
+        self.loaded_file_path = clean_path
+        self.playback_index = 0
+        self.stop_playback()
+        message = f'Loaded {len(self.loaded_waypoints)} waypoint(s) from {clean_path}'
+        self.get_logger().info(message)
+        return True, message
+
+    def start_playback(self, loop=False):
+        if not self.loaded_waypoints:
+            return False, 'No playback file loaded'
+
+        self.playback_loop = bool(loop)
+        self.playback_started_at = self.get_clock().now()
+        self.playback_index = 0
+        self.is_playing = True
+        message = f'Started playback with {len(self.loaded_waypoints)} waypoint(s)'
+        self.get_logger().info(message)
+        return True, message
+
+    def stop_playback(self):
+        self.is_playing = False
+        self.playback_started_at = None
+        self.playback_index = 0
+
+    def normalize_waypoint(self, item, idx):
+        if isinstance(item, dict):
+            pos = item.get('position')
+            angles = item.get('angles', [0.0, 0.0, 0.0, 1.0])
+            linear = item.get('linear_velocity', [0.0, 0.0, 0.0])
+            angular = item.get('angular_velocity', [0.0, 0.0, 0.0])
+            carrot = item.get('carrot_body', [0.0, 0.0])
+            time_from_start = float(item.get('time_from_start', idx * self.waypoint_timing))
+            frame_id = str(item.get('frame_id') or 'odom')
+        elif isinstance(item, (list, tuple)) and len(item) >= 3:
+            pos = [item[0], item[1], item[2]]
+            angles = [0.0, 0.0, 0.0, 1.0]
+            linear = [0.0, 0.0, 0.0]
+            angular = [0.0, 0.0, 0.0]
+            carrot = [0.0, 0.0]
+            time_from_start = idx * self.waypoint_timing
+            frame_id = 'odom'
+        else:
+            raise ValueError('unsupported format')
+
+        if pos is None or len(pos) < 3:
+            raise ValueError('missing position[3]')
+        if len(angles) < 4:
+            angles = [0.0, 0.0, 0.0, 1.0]
+        if len(linear) < 3:
+            linear = [0.0, 0.0, 0.0]
+        if len(angular) < 3:
+            angular = [0.0, 0.0, 0.0]
+        if len(carrot) < 2:
+            carrot = [0.0, 0.0]
+
+        return {
+            'time_from_start': time_from_start,
+            'frame_id': frame_id,
+            'position': [float(pos[0]), float(pos[1]), float(pos[2])],
+            'angles': [float(angles[0]), float(angles[1]), float(angles[2]), float(angles[3])],
+            'linear_velocity': [float(linear[0]), float(linear[1]), float(linear[2])],
+            'angular_velocity': [float(angular[0]), float(angular[1]), float(angular[2])],
+            'carrot_body': [float(carrot[0]), float(carrot[1])]
+        }
+
+    def playback_timer_callback(self):
+        if not self.is_playing or self.playback_started_at is None:
+            return
+        if not self.loaded_waypoints:
+            self.stop_playback()
+            return
+
+        elapsed = (self.get_clock().now() - self.playback_started_at).nanoseconds / 1e9
+        while self.playback_index < len(self.loaded_waypoints):
+            waypoint = self.loaded_waypoints[self.playback_index]
+            if elapsed < waypoint['time_from_start']:
+                break
+            self.publish_playback_target(waypoint)
+            self.playback_index += 1
+
+        if self.playback_index >= len(self.loaded_waypoints):
+            if self.playback_loop:
+                self.playback_started_at = self.get_clock().now()
+                self.playback_index = 0
+            else:
+                self.stop_playback()
+                self.get_logger().info('Playback completed')
+
+    def publish_playback_target(self, waypoint):
+        msg = ControlTarget()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = waypoint['frame_id']
+        msg.source_mode = 'playback_manual_assisted'
+        msg.pose.position.x = waypoint['position'][0]
+        msg.pose.position.y = waypoint['position'][1]
+        msg.pose.position.z = waypoint['position'][2]
+        msg.pose.orientation.x = waypoint['angles'][0]
+        msg.pose.orientation.y = waypoint['angles'][1]
+        msg.pose.orientation.z = waypoint['angles'][2]
+        msg.pose.orientation.w = waypoint['angles'][3]
+        msg.twist.linear.x = waypoint['linear_velocity'][0]
+        msg.twist.linear.y = waypoint['linear_velocity'][1]
+        msg.twist.linear.z = waypoint['linear_velocity'][2]
+        msg.twist.angular.x = waypoint['angular_velocity'][0]
+        msg.twist.angular.y = waypoint['angular_velocity'][1]
+        msg.twist.angular.z = waypoint['angular_velocity'][2]
+        msg.carrot_forward = waypoint['carrot_body'][0]
+        msg.carrot_right = waypoint['carrot_body'][1]
+        self.playback_target_pub.publish(msg)
     
     def handle_playback_path(self, request, response):
         # Use the provided file path in the request to load stored waypoints

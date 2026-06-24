@@ -309,7 +309,7 @@
     .camera {
       position: relative;
       display: grid;
-      grid-template-rows: auto minmax(220px, 1fr);
+      grid-template-rows: auto auto;
       min-height: 0;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -332,9 +332,10 @@
     .camera img {
       display: block;
       width: 100%;
-      height: 100%;
-      min-height: 280px;
+      height: auto;
+      aspect-ratio: 16 / 9;
       object-fit: contain;
+      object-position: center;
       background: #040608;
     }
 
@@ -666,7 +667,7 @@
             <input id="rosbridgeUrl" value="ws://192.168.0.10:9090" autocomplete="off">
           </div>
           <div class="field">
-            <label for="cameraUrl">Cameras</label>
+            <label for="cameraUrl">Fallback cameras physiques</label>
             <input id="cameraUrl" value="http://192.168.0.10:6969" autocomplete="off">
           </div>
           <div class="button-row three">
@@ -715,17 +716,26 @@
             <button id="stopBtn" class="danger" type="button">Select / Stop</button>
           </div>
           <button id="recordBtn" class="recording" type="button">Record</button>
+          <div class="field">
+            <label for="playbackPath">Trajet JSON</label>
+            <input id="playbackPath" type="text" value="/tmp/waypoints_latest.json" spellcheck="false">
+          </div>
+          <div class="button-row three">
+            <button id="loadPlaybackBtn" class="ghost" type="button">Load</button>
+            <button id="playPlaybackBtn" class="primary" type="button">Play</button>
+            <button id="stopPlaybackBtn" class="danger" type="button">Stop</button>
+          </div>
           <div class="readout-grid">
             <div class="metric">
               <div class="metric-label">Mode</div>
               <div id="modeMetric" class="metric-value">Local</div>
             </div>
             <div class="metric">
-              <div class="metric-label">Dernier message</div>
-              <div id="ageMetric" class="metric-value">-</div>
+              <div class="metric-label">Playback</div>
+              <div id="playbackMetric" class="metric-value">-</div>
             </div>
           </div>
-          <div class="tiny">Start envoie la demande de changement de mode. Select active l'arret logiciel via disable_pwm. Record demarre ou arrete l'enregistrement des waypoints.</div>
+          <div class="tiny">Start arme MANUAL_ASSISTED. Select active l'arret logiciel. Record sauvegarde les targets carotte. Load/Play utilise un JSON disponible sur la machine ROS.</div>
         </div>
       </section>
     </aside>
@@ -741,13 +751,13 @@
         </div>
         <div class="panel-body camera-grid">
           <article id="cam1Card" class="camera offline">
-            <div class="camera-title"><span>Camera 1</span><span id="cam1State">-</span></div>
-            <img id="cam1" alt="Camera 1">
+            <div class="camera-title"><span>Avant</span><span id="cam1State">-</span></div>
+            <img id="cam1" alt="Camera avant">
             <div class="camera-placeholder">Camera non detectee</div>
           </article>
           <article id="cam2Card" class="camera offline">
-            <div class="camera-title"><span>Camera 2</span><span id="cam2State">-</span></div>
-            <img id="cam2" alt="Camera 2">
+            <div class="camera-title"><span>Dessous</span><span id="cam2State">-</span></div>
+            <img id="cam2" alt="Camera dessous">
             <div class="camera-placeholder">Camera non detectee</div>
           </article>
         </div>
@@ -833,6 +843,11 @@
   <script>
     const joyTopic = "/dashboard/gamepad";
     const debugTopic = "/debug/manual_assisted";
+    const unityCameraTopics = {
+      front: "/unity/camera/front/compressed",
+      bottom: "/unity/camera/bottom/compressed"
+    };
+    const unityCameraTimeoutMs = 2000;
     const publishPeriodMs = 50;
     const storageKey = "asuqtr.dashboard.settings";
 
@@ -846,6 +861,12 @@
     let selectedModeRequest = "Start envoye";
     let recordEnabled = false;
     let recordRequestPending = false;
+    let playbackRequestPending = false;
+    let playbackStatus = "-";
+    let physicalCamerasAvailable = false;
+    let physicalCameraBase = "";
+    const lastUnityFrameAt = { 1: 0, 2: 0 };
+    const cameraSource = { 1: "offline", 2: "offline" };
 
     const el = {
       jetsonIp: document.getElementById("jetsonIp"),
@@ -862,9 +883,13 @@
       gamepadName: document.getElementById("gamepadName"),
       debug: document.getElementById("debug"),
       modeMetric: document.getElementById("modeMetric"),
-      ageMetric: document.getElementById("ageMetric"),
       cameraHint: document.getElementById("cameraHint"),
       recordBtn: document.getElementById("recordBtn"),
+      playbackPath: document.getElementById("playbackPath"),
+      loadPlaybackBtn: document.getElementById("loadPlaybackBtn"),
+      playPlaybackBtn: document.getElementById("playPlaybackBtn"),
+      stopPlaybackBtn: document.getElementById("stopPlaybackBtn"),
+      playbackMetric: document.getElementById("playbackMetric"),
       cam1Card: document.getElementById("cam1Card"),
       cam2Card: document.getElementById("cam2Card"),
       cam1: document.getElementById("cam1"),
@@ -925,6 +950,7 @@
         if (settings.jetsonIp) el.jetsonIp.value = settings.jetsonIp;
         if (settings.rosbridgeUrl) el.rosbridgeUrl.value = settings.rosbridgeUrl;
         if (settings.cameraUrl) el.cameraUrl.value = settings.cameraUrl;
+        if (settings.playbackPath) el.playbackPath.value = settings.playbackPath;
       } catch (error) {
         console.warn("Could not load dashboard settings", error);
       }
@@ -934,7 +960,8 @@
       const settings = {
         jetsonIp: el.jetsonIp.value.trim(),
         rosbridgeUrl: el.rosbridgeUrl.value.trim(),
-        cameraUrl: el.cameraUrl.value.trim()
+        cameraUrl: el.cameraUrl.value.trim(),
+        playbackPath: el.playbackPath.value.trim()
       };
       try {
         localStorage.setItem(storageKey, JSON.stringify(settings));
@@ -980,6 +1007,20 @@
         type: "std_msgs/msg/Float64MultiArray",
         throttle_rate: 120
       });
+      send({
+        op: "subscribe",
+        topic: unityCameraTopics.front,
+        type: "sensor_msgs/msg/CompressedImage",
+        queue_length: 1,
+        throttle_rate: 100
+      });
+      send({
+        op: "subscribe",
+        topic: unityCameraTopics.bottom,
+        type: "sensor_msgs/msg/CompressedImage",
+        queue_length: 1,
+        throttle_rate: 100
+      });
     }
 
     function connect() {
@@ -1020,6 +1061,10 @@
           const data = JSON.parse(event.data);
           if (data.topic === debugTopic) {
             manualAssistedDebug = data.msg;
+          } else if (data.topic === unityCameraTopics.front) {
+            displayUnityCameraFrame(1, data.msg);
+          } else if (data.topic === unityCameraTopics.bottom) {
+            displayUnityCameraFrame(2, data.msg);
           } else if (data.op === "service_response" && data.service === "/playback_recording") {
             recordRequestPending = false;
             if (data.result === false || !data.values || !data.values.success) {
@@ -1027,6 +1072,19 @@
               console.warn("Playback recording service rejected the request", data);
             }
             updateRecordButton();
+          } else if (data.op === "service_response" && data.service === "/playback_command") {
+            playbackRequestPending = false;
+            if (data.result === false || !data.values || !data.values.success) {
+              playbackStatus = "Erreur";
+              console.warn("Playback command failed", data);
+            } else {
+              const count = data.values.waypoint_count || 0;
+              playbackStatus = count + " pts";
+            }
+            if (data.values && data.values.message) {
+              console.info(data.values.message);
+            }
+            updatePlaybackButtons();
           }
         } catch (error) {
           console.warn("Invalid rosbridge message", error);
@@ -1034,23 +1092,102 @@
       };
     }
 
-    function reloadCameras(baseUrl) {
+    async function reloadCameras(baseUrl) {
       const camBase = baseUrl || normalizedUrls().camBase;
       const stamp = Date.now();
+      physicalCameraBase = camBase;
+      physicalCamerasAvailable = false;
       setCameraState(1, "loading");
       setCameraState(2, "loading");
       el.cam1State.textContent = "loading";
       el.cam2State.textContent = "loading";
       el.cameraHint.textContent = camBase;
-      el.cam1.src = camBase + "/video_feed1?t=" + stamp;
-      el.cam2.src = camBase + "/video_feed2?t=" + stamp;
+
+      try {
+        const response = await fetch(camBase + "/health?t=" + stamp, { cache: "no-store" });
+        const health = await response.json();
+        if (health.physical_cameras === false) {
+          if (!hasRecentUnityFrame(1)) el.cam1.removeAttribute("src");
+          if (!hasRecentUnityFrame(2)) el.cam2.removeAttribute("src");
+          if (!hasRecentUnityFrame(1)) setCameraState(1, "Unity attendu");
+          if (!hasRecentUnityFrame(2)) setCameraState(2, "Unity attendu");
+          el.cameraHint.textContent = "Cameras physiques desactivees en simulation";
+          return;
+        }
+        physicalCamerasAvailable = true;
+      } catch (error) {
+        console.warn("Camera health check failed; trying MJPEG streams", error);
+        physicalCamerasAvailable = true;
+      }
+
+      loadPhysicalCamera(1, stamp);
+      loadPhysicalCamera(2, stamp);
+    }
+
+    function compressedImageDataUri(msg) {
+      if (!msg || !msg.data) return null;
+      let base64 = msg.data;
+      if (Array.isArray(base64)) {
+        let binary = "";
+        const chunkSize = 8192;
+        for (let offset = 0; offset < base64.length; offset += chunkSize) {
+          binary += String.fromCharCode(...base64.slice(offset, offset + chunkSize));
+        }
+        base64 = btoa(binary);
+      }
+      if (typeof base64 !== "string" || base64.length === 0) return null;
+      const format = String(msg.format || "jpeg").toLowerCase();
+      const mime = format.includes("png") ? "image/png" : "image/jpeg";
+      return "data:" + mime + ";base64," + base64;
+    }
+
+    function displayUnityCameraFrame(cameraIndex, msg) {
+      const uri = compressedImageDataUri(msg);
+      if (!uri) return;
+      const image = cameraIndex === 1 ? el.cam1 : el.cam2;
+      lastUnityFrameAt[cameraIndex] = Date.now();
+      cameraSource[cameraIndex] = "unity";
+      image.src = uri;
+      setCameraState(cameraIndex, "UNITY");
+      el.cameraHint.textContent = "Flux Unity via ROSBridge";
+    }
+
+    function hasRecentUnityFrame(cameraIndex) {
+      return Date.now() - lastUnityFrameAt[cameraIndex] <= unityCameraTimeoutMs;
+    }
+
+    function loadPhysicalCamera(cameraIndex, stamp) {
+      if (!physicalCamerasAvailable || hasRecentUnityFrame(cameraIndex)) return;
+      const image = cameraIndex === 1 ? el.cam1 : el.cam2;
+      cameraSource[cameraIndex] = "physical";
+      image.src = physicalCameraBase + "/video_feed" + cameraIndex + "?t=" + (stamp || Date.now());
+      setCameraState(cameraIndex, "PHYSIQUE");
+    }
+
+    function updateCameraSources() {
+      for (const cameraIndex of [1, 2]) {
+        if (hasRecentUnityFrame(cameraIndex)) continue;
+        if (cameraSource[cameraIndex] === "unity") {
+          cameraSource[cameraIndex] = "offline";
+          if (physicalCamerasAvailable) {
+            loadPhysicalCamera(cameraIndex);
+          } else {
+            const image = cameraIndex === 1 ? el.cam1 : el.cam2;
+            image.removeAttribute("src");
+            setCameraState(cameraIndex, "Unity attendu");
+          }
+        }
+      }
     }
 
     function setCameraState(cameraIndex, state) {
       const card = cameraIndex === 1 ? el.cam1Card : el.cam2Card;
       const label = cameraIndex === 1 ? el.cam1State : el.cam2State;
       label.textContent = state;
-      card.classList.toggle("offline", state !== "online" && state !== "loading");
+      card.classList.toggle(
+        "offline",
+        state !== "UNITY" && state !== "PHYSIQUE" && state !== "loading"
+      );
     }
 
     function buttonValue(gp, index) {
@@ -1235,14 +1372,47 @@
       updateRecordButton();
     }
 
+    function updatePlaybackButtons() {
+      el.loadPlaybackBtn.disabled = playbackRequestPending;
+      el.playPlaybackBtn.disabled = playbackRequestPending;
+      el.stopPlaybackBtn.disabled = playbackRequestPending;
+      el.playbackMetric.textContent = playbackRequestPending ? "En attente" : playbackStatus;
+    }
+
+    function sendPlaybackCommand(command) {
+      if (playbackRequestPending) return;
+      saveSettings();
+      const filePath = el.playbackPath.value.trim();
+      const sent = send({
+        op: "call_service",
+        id: "playback-command-" + command + "-" + Date.now(),
+        service: "/playback_command",
+        type: "sub_interfaces/srv/PlaybackCommand",
+        args: {
+          command,
+          file_path: filePath,
+          loop: false
+        }
+      });
+      if (!sent) {
+        console.warn("ROS bridge is not connected; playback command not sent");
+        return;
+      }
+      playbackRequestPending = true;
+      playbackStatus = command;
+      updatePlaybackButtons();
+    }
+
     function updateDebug() {
       const age = lastJoyAt ? ((Date.now() - lastJoyAt) / 1000).toFixed(1) + "s" : "-";
-      el.ageMetric.textContent = age;
       el.debug.textContent = JSON.stringify({
         rosbridge: Boolean(ws && ws.readyState === WebSocket.OPEN),
         topic: joyTopic,
+        lastJoyAge: age,
         recordEnabled,
         recordRequestPending,
+        playbackStatus,
+        playbackRequestPending,
         lastJoy,
         manualAssistedDebug
       }, null, 2);
@@ -1268,6 +1438,9 @@
     document.getElementById("armBtn").addEventListener("click", () => sendSynthetic(7));
     document.getElementById("stopBtn").addEventListener("click", () => sendSynthetic(6));
     document.getElementById("recordBtn").addEventListener("click", toggleRecording);
+    document.getElementById("loadPlaybackBtn").addEventListener("click", () => sendPlaybackCommand("load"));
+    document.getElementById("playPlaybackBtn").addEventListener("click", () => sendPlaybackCommand("play"));
+    document.getElementById("stopPlaybackBtn").addEventListener("click", () => sendPlaybackCommand("stop"));
     document.getElementById("reloadCamerasBtn").addEventListener("click", () => reloadCameras());
     document.getElementById("clearDebugBtn").addEventListener("click", () => {
       lastJoy = null;
@@ -1275,8 +1448,12 @@
       updateDebug();
     });
 
-    el.cam1.addEventListener("load", () => { setCameraState(1, "online"); });
-    el.cam2.addEventListener("load", () => { setCameraState(2, "online"); });
+    el.cam1.addEventListener("load", () => {
+      setCameraState(1, cameraSource[1] === "unity" ? "UNITY" : "PHYSIQUE");
+    });
+    el.cam2.addEventListener("load", () => {
+      setCameraState(2, cameraSource[2] === "unity" ? "UNITY" : "PHYSIQUE");
+    });
     el.cam1.addEventListener("error", () => { setCameraState(1, "offline"); });
     el.cam2.addEventListener("error", () => { setCameraState(2, "offline"); });
 
@@ -1297,6 +1474,8 @@
     resetInputs();
     publishTimer = setInterval(loop, publishPeriodMs);
     setInterval(updatePublishRate, 1000);
+    setInterval(updateCameraSources, 500);
+    updatePlaybackButtons();
     updateDebug();
   </script>
 </body>

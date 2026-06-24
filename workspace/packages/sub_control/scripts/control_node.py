@@ -162,6 +162,7 @@ class ControlNode(Node):
         self.manual_assisted_yaw_target = 0.0
         self.manual_assisted_last_update_time = None
         self.manual_assisted_last_gamepad_time = None
+        self.manual_assisted_last_playback_time = None
         self.last_depth_up_button_state = False
         self.last_depth_down_button_state = False
         self.last_hold_button_state = False
@@ -261,6 +262,10 @@ class ControlNode(Node):
         self.gamepad_sub = self.create_subscription(
              Joy, 'dashboard/gamepad', self.gamepad_callback, only_latest_qos,
              callback_group=self.sensor_cb_group
+        )
+        self.playback_target_sub = self.create_subscription(
+             ControlTarget, 'control/playback_target', self.playback_target_callback, only_latest_qos,
+             callback_group=self.action_cb_group
         )
         
         self.thruster_pub = self.create_publisher(
@@ -540,7 +545,7 @@ class ControlNode(Node):
                 self.target_state[0:6] = self.current_state[0:6]
                 self.target_state[6:12] = 0.0 # Force target velocities to 0 for station-keeping
 
-            if self._current_mode == ControlMode.MANUAL_ASSISTED:
+            if self._current_mode == ControlMode.MANUAL_ASSISTED and not self._has_recent_playback_target():
                 self._apply_manual_assisted_timeout()
                 
             # Copy to local thread-safe variable for math below so the Action Server
@@ -678,6 +683,46 @@ class ControlNode(Node):
                     f"Debug Target (NED): N:{self.target_state[0]:.1f}, E:{self.target_state[1]:.1f}, D:{self.target_state[2]:.1f} | "
                     f"R:{msg.pose.orientation.x:.1f}°, P:{msg.pose.orientation.y:.1f}°, Y:{msg.pose.orientation.z:.1f}°"
                 )
+
+    def playback_target_callback(self, msg):
+        """Apply recorded MANUAL_ASSISTED targets while keeping the LQR active."""
+        if self._current_mode != ControlMode.MANUAL_ASSISTED:
+            return
+        if msg.source_mode != 'playback_manual_assisted':
+            return
+
+        roll_flu, pitch_flu, yaw_flu = self.quaternion_to_euler(
+            msg.pose.orientation.x,
+            msg.pose.orientation.y,
+            msg.pose.orientation.z,
+            msg.pose.orientation.w
+        )
+        yaw_ned = (math.pi / 2.0) - yaw_flu
+
+        with self.target_state_lock:
+            self.target_state[0] = msg.pose.position.y
+            self.target_state[1] = msg.pose.position.x
+            self.target_state[2] = -msg.pose.position.z
+            self.target_state[3] = roll_flu
+            self.target_state[4] = -pitch_flu
+            self.target_state[5] = (yaw_ned + math.pi) % (2 * math.pi) - math.pi
+            self.target_state[6] = msg.twist.linear.x
+            self.target_state[7] = -msg.twist.linear.y
+            self.target_state[8] = -msg.twist.linear.z
+            self.target_state[9] = msg.twist.angular.x
+            self.target_state[10] = -msg.twist.angular.y
+            self.target_state[11] = -msg.twist.angular.z
+            self.manual_assisted_carrot_body[0] = msg.carrot_forward
+            self.manual_assisted_carrot_body[1] = -msg.carrot_right
+            self.manual_assisted_depth_target = self.target_state[2]
+            self.manual_assisted_yaw_target = self.target_state[5]
+            self.manual_assisted_last_playback_time = self._now_seconds()
+
+    def _has_recent_playback_target(self):
+        last = self.manual_assisted_last_playback_time
+        if last is None:
+            return False
+        return (self._now_seconds() - last) <= self.manual_assisted_gamepad_timeout
 
     # ==========================================
     # GAMEPAD CALLBACK

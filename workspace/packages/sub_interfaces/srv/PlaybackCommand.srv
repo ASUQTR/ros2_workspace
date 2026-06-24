@@ -1,0 +1,7 @@
+string command
+string file_path
+bool loop
+---
+bool success
+string message
+uint32 waypoint_count

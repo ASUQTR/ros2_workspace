@@ -47,6 +47,8 @@ def placeholder_frame(camera_index, message):
 
 
 def open_camera(camera_index):
+    if not CONFIG.physical_cameras:
+        return None
     camera = cv2.VideoCapture(camera_index)
     if camera.isOpened():
         camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -117,6 +119,8 @@ def index():
 
 @app.route("/video_feed1")
 def video_feed1():
+    if not CONFIG.physical_cameras:
+        return ("Physical cameras are disabled", 503)
     return Response(
         gen_frames(CONFIG.camera_1),
         mimetype="multipart/x-mixed-replace; boundary=frame",
@@ -125,6 +129,8 @@ def video_feed1():
 
 @app.route("/video_feed2")
 def video_feed2():
+    if not CONFIG.physical_cameras:
+        return ("Physical cameras are disabled", 503)
     return Response(
         gen_frames(CONFIG.camera_2),
         mimetype="multipart/x-mixed-replace; boundary=frame",
@@ -137,6 +143,7 @@ def health():
         status="ok",
         camera_1=CONFIG.camera_1,
         camera_2=CONFIG.camera_2,
+        physical_cameras=CONFIG.physical_cameras,
         save_video=CONFIG.save_video,
     )
 
@@ -145,6 +152,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--camera-1", type=int, default=0)
     parser.add_argument("--camera-2", type=int, default=4)
+    parser.add_argument("--physical-cameras", type=parse_bool, default=True)
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=6969)
     parser.add_argument("--save-video", type=parse_bool, default=False)
