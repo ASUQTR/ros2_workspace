@@ -4,7 +4,7 @@ ekf_filter_node:
     # Core Node Settings
     # -----------------------------------------------------------
     frequency: 25.0
-    sensor_timeout: 0.00
+    sensor_timeout: 0.2
     two_d_mode: false
     transform_time_offset: 0.0
     transform_timeout: 0.0
