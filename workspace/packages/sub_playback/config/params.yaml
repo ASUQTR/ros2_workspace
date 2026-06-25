@@ -13,3 +13,4 @@ playback_node:
     target_republish_period_sec: 0.2
     odometry_timeout_sec: 0.75
     magnetic_play_enabled: true
+    require_kill_switch_armed: true

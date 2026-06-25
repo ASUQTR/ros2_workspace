@@ -72,6 +72,8 @@ launch:
         - from: "$(find-pkg-share sub_playback)/config/params.yaml"
         - name: "use_sim_time"
           value: true
+        - name: "require_kill_switch_armed"
+          value: false
 
   - node:
       pkg: "sub_hardware"

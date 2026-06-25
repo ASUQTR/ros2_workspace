@@ -64,6 +64,9 @@ class PlaybackNode(Node):
         self.magnetic_play_enabled = bool(
             self.declare_parameter('magnetic_play_enabled', True).value
         )
+        self.require_kill_switch_armed = bool(
+            self.declare_parameter('require_kill_switch_armed', True).value
+        )
         self.add_on_set_parameters_callback(self.parameter_callback)
 
         self.recorded_waypoints = []
@@ -87,6 +90,7 @@ class PlaybackNode(Node):
         self.reference_mode = 'body'
         self.progression_mode = 'setpoint'
         self.control_stopped = True
+        self.kill_switch_armed = not self.require_kill_switch_armed
         self.last_magnetic_switch_state = False
         self.last_error = ''
         self.last_timed_out = False
@@ -129,6 +133,9 @@ class PlaybackNode(Node):
         self.control_stop_subscription = self.create_subscription(
             Bool, 'disable_pwm', self.control_stop_callback, latched_qos
         )
+        self.kill_switch_subscription = self.create_subscription(
+            Bool, 'kill_switch', self.kill_switch_callback, latched_qos
+        )
         self.magnetic_switch_subscription = self.create_subscription(
             Bool, 'magnetic_switch_2', self.magnetic_switch_callback, latched_qos
         )
@@ -162,6 +169,8 @@ class PlaybackNode(Node):
                 updates[param.name] = float(param.value)
             elif param.name == 'magnetic_play_enabled':
                 updates[param.name] = bool(param.value)
+            elif param.name == 'require_kill_switch_armed':
+                updates[param.name] = bool(param.value)
             else:
                 return SetParametersResult(
                     successful=False, reason=f'Unsupported parameter: {param.name}'
@@ -184,6 +193,10 @@ class PlaybackNode(Node):
                 self.odometry_timeout = value
             elif name == 'magnetic_play_enabled':
                 self.magnetic_play_enabled = value
+            elif name == 'require_kill_switch_armed':
+                self.require_kill_switch_armed = value
+                if not value:
+                    self.kill_switch_armed = True
         return SetParametersResult(successful=True)
 
     # Recording
@@ -201,6 +214,10 @@ class PlaybackNode(Node):
     def start_recording(self):
         if self.control_stopped:
             self.last_error = 'Cannot record: press Start first'
+            self.publish_status('error')
+            return False
+        if self.require_kill_switch_armed and not self.kill_switch_armed:
+            self.last_error = 'Cannot record: physical kill switch is not armed'
             self.publish_status('error')
             return False
         if not self.odometry_is_fresh():
@@ -507,6 +524,8 @@ class PlaybackNode(Node):
     def start_playback(self, loop=False):
         if not self.loaded_waypoints:
             return False, 'No playback file loaded'
+        if self.require_kill_switch_armed and not self.kill_switch_armed:
+            return False, 'Cannot start playback: physical kill switch is not armed'
         if not self.odometry_is_fresh():
             return False, 'Cannot start playback: odometry is unavailable or stale'
         if self.control_stopped:
@@ -689,6 +708,18 @@ class PlaybackNode(Node):
             self.stop_recording_and_save()
         if self.control_stopped and self.is_playing:
             self.stop_playback('stopped', 'MANUAL_ASSISTED was stopped')
+
+    def kill_switch_callback(self, msg):
+        self.kill_switch_armed = bool(msg.data)
+        if self.kill_switch_armed:
+            return
+        if self.is_recording:
+            self.stop_recording_and_save()
+        if self.is_playing:
+            self.stop_playback('stopped', 'Physical kill switch was pulled')
+        else:
+            self.last_error = 'Physical kill switch is not armed'
+            self.publish_status('stopped')
 
     def magnetic_switch_callback(self, msg):
         state = bool(msg.data)
