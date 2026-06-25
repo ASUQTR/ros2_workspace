@@ -126,6 +126,64 @@
       padding: 16px;
     }
 
+    .tab-nav {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 6px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    .tab-nav button {
+      min-width: 140px;
+      background: transparent;
+    }
+
+    .tab-nav button.active {
+      background: var(--blue);
+      color: #fff;
+    }
+
+    [data-dashboard-tab].tab-hidden {
+      display: none;
+    }
+
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      gap: 8px;
+    }
+
+    .matrix-grid .field input {
+      min-height: 38px;
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0f1317;
+    }
+
+    .segmented.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .segmented button {
+      min-height: 38px;
+      background: transparent;
+    }
+
+    .segmented button.active {
+      background: var(--blue);
+      color: #fff;
+    }
+
     .sidebar,
     .main {
       min-width: 0;
@@ -628,8 +686,17 @@
       .pilot-layout,
       .button-row,
       .button-row.three,
-      .readout-grid {
+      .readout-grid,
+      .matrix-grid {
         grid-template-columns: 1fr;
+      }
+
+      .tab-nav {
+        overflow-x: auto;
+      }
+
+      .tab-nav button {
+        min-width: 110px;
       }
 
       .button-map {
@@ -644,13 +711,18 @@
 </head>
 <body>
   <main class="app">
+    <nav class="tab-nav" aria-label="Dashboard views">
+      <button class="active" type="button" data-tab-button="pilotage">Pilotage</button>
+      <button type="button" data-tab-button="connection">Connexion</button>
+      <button type="button" data-tab-button="control">Controle</button>
+    </nav>
     <aside class="sidebar">
       <div class="brand">
         <h1>ASUQTR Pilot Dashboard</h1>
         <div class="sub">Manual assisted / ROSBridge</div>
       </div>
 
-      <section class="panel">
+      <section class="panel tab-hidden" data-dashboard-tab="connection">
         <div class="panel-header">
           <div>
             <h2 class="panel-title">Liaisons</h2>
@@ -678,7 +750,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel tab-hidden" data-dashboard-tab="connection">
         <div class="panel-header">
           <div>
             <h2 class="panel-title">Etat</h2>
@@ -703,7 +775,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel" data-dashboard-tab="pilotage">
         <div class="panel-header">
           <div>
             <h2 class="panel-title">Commandes</h2>
@@ -766,7 +838,7 @@
     </aside>
 
     <section class="main">
-      <section class="panel">
+      <section class="panel" data-dashboard-tab="pilotage">
         <div class="panel-header">
           <div>
             <h2 class="panel-title">Cameras</h2>
@@ -788,7 +860,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel" data-dashboard-tab="pilotage">
         <div class="panel-header">
           <div>
             <h2 class="panel-title">Entrees pilote</h2>
@@ -850,7 +922,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel tab-hidden" data-dashboard-tab="connection">
         <div class="panel-header">
           <div>
             <h2 class="panel-title">Debug</h2>
@@ -862,12 +934,74 @@
           <pre id="debug" class="debug">Waiting...</pre>
         </div>
       </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="control">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Playback et LQR</h2>
+            <p class="panel-kicker" id="controlSettingsStatus">Synchronisation en attente</p>
+          </div>
+        </div>
+        <div class="panel-body field-grid">
+          <div class="readout-grid">
+            <div class="metric">
+              <div class="metric-label">Reference playback</div>
+              <div class="segmented" style="margin-top: 8px;">
+                <button id="referenceBodyBtn" class="active" type="button">Body</button>
+                <button id="referenceWorldBtn" type="button">World</button>
+              </div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Progression</div>
+              <div class="segmented" style="margin-top: 8px;">
+                <button id="progressionSetpointBtn" class="active" type="button">Setpoint</button>
+                <button id="progressionTimestampBtn" type="button">Timestamp</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">Tolérances playback</div>
+            <div class="matrix-grid" style="margin-top: 8px;">
+              <div class="field"><label for="positionTolerance">Horizontal (m)</label><input id="positionTolerance" type="number" min="0.01" step="0.01" value="0.15"></div>
+              <div class="field"><label for="depthTolerance">Profondeur (m)</label><input id="depthTolerance" type="number" min="0.01" step="0.01" value="0.10"></div>
+              <div class="field"><label for="angleTolerance">Orientation (deg)</label><input id="angleTolerance" type="number" min="1" step="1" value="10"></div>
+              <div class="field"><label for="waypointTimeout">Timeout (s)</label><input id="waypointTimeout" type="number" min="1" step="1" value="8"></div>
+            </div>
+            <button id="applyPlaybackSettingsBtn" class="ghost" type="button" style="margin-top: 8px;">Appliquer les tolérances</button>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">Profil LQR</div>
+            <div class="segmented three" style="margin-top: 8px;">
+              <button id="profileStandstillBtn" class="active" type="button">Standstill</button>
+              <button id="profileForwardBtn" type="button" disabled>Forward - non ajuste</button>
+              <button id="profileTurningBtn" type="button" disabled>Forward + Turning - non ajuste</button>
+            </div>
+            <div id="profileStatus" class="tiny" style="margin-top: 8px;">Changement permis seulement en STOP.</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">Matrice Q - coût des états</div>
+            <div id="qMatrixFields" class="matrix-grid" style="margin-top: 8px;"></div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Matrice R - coût des thrusters</div>
+            <div id="rMatrixFields" class="matrix-grid" style="margin-top: 8px;"></div>
+          </div>
+          <div class="button-row">
+            <button id="reloadMatricesBtn" class="ghost" type="button">Relire Q/R</button>
+            <button id="applyMatricesBtn" class="primary" type="button">Appliquer Q/R</button>
+          </div>
+        </div>
+      </section>
     </section>
   </main>
 
   <script>
     const joyTopic = "/dashboard/gamepad";
     const debugTopic = "/debug/manual_assisted";
+    const playbackStatusTopic = "/playback/status";
     const unityCameraTopics = {
       front: "/unity/camera/front/compressed",
       bottom: "/unity/camera/bottom/compressed"
@@ -888,6 +1022,10 @@
     let recordRequestPending = false;
     let playbackRequestPending = false;
     let playbackStatus = "-";
+    let playbackReferenceMode = "body";
+    let playbackProgressionMode = "setpoint";
+    let playbackActive = false;
+    let controlStopped = true;
     let depthParameterRequestsPending = 0;
     let depthParameterQueue = [];
     let physicalCamerasAvailable = false;
@@ -917,6 +1055,24 @@
       playPlaybackBtn: document.getElementById("playPlaybackBtn"),
       stopPlaybackBtn: document.getElementById("stopPlaybackBtn"),
       playbackMetric: document.getElementById("playbackMetric"),
+      referenceBodyBtn: document.getElementById("referenceBodyBtn"),
+      referenceWorldBtn: document.getElementById("referenceWorldBtn"),
+      progressionSetpointBtn: document.getElementById("progressionSetpointBtn"),
+      progressionTimestampBtn: document.getElementById("progressionTimestampBtn"),
+      positionTolerance: document.getElementById("positionTolerance"),
+      depthTolerance: document.getElementById("depthTolerance"),
+      angleTolerance: document.getElementById("angleTolerance"),
+      waypointTimeout: document.getElementById("waypointTimeout"),
+      applyPlaybackSettingsBtn: document.getElementById("applyPlaybackSettingsBtn"),
+      qMatrixFields: document.getElementById("qMatrixFields"),
+      rMatrixFields: document.getElementById("rMatrixFields"),
+      reloadMatricesBtn: document.getElementById("reloadMatricesBtn"),
+      applyMatricesBtn: document.getElementById("applyMatricesBtn"),
+      profileStandstillBtn: document.getElementById("profileStandstillBtn"),
+      profileForwardBtn: document.getElementById("profileForwardBtn"),
+      profileTurningBtn: document.getElementById("profileTurningBtn"),
+      profileStatus: document.getElementById("profileStatus"),
+      controlSettingsStatus: document.getElementById("controlSettingsStatus"),
       depthLimitsEnabled: document.getElementById("depthLimitsEnabled"),
       depthBaseTarget: document.getElementById("depthBaseTarget"),
       depthMinTarget: document.getElementById("depthMinTarget"),
@@ -934,6 +1090,31 @@
       ltFill: document.getElementById("ltFill"),
       rtFill: document.getElementById("rtFill")
     };
+
+    const qLabels = ["X", "Y", "Z", "Roll", "Pitch", "Yaw", "Vx", "Vy", "Vz", "P", "Q", "R"];
+    const rLabels = ["Thruster 1", "Thruster 2", "Thruster 3", "Thruster 4", "Thruster 5", "Thruster 6", "Thruster 7", "Thruster 8"];
+    const qInputs = [];
+    const rInputs = [];
+
+    function buildMatrixFields(container, labels, inputs) {
+      labels.forEach((label, index) => {
+        const field = document.createElement("div");
+        field.className = "field";
+        const fieldLabel = document.createElement("label");
+        fieldLabel.textContent = label;
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = "0";
+        input.step = "0.0001";
+        input.dataset.matrixIndex = String(index);
+        field.append(fieldLabel, input);
+        container.appendChild(field);
+        inputs.push(input);
+      });
+    }
+
+    buildMatrixFields(el.qMatrixFields, qLabels, qInputs);
+    buildMatrixFields(el.rMatrixFields, rLabels, rInputs);
 
     const axisEls = {
       leftX: { value: document.getElementById("leftXValue"), bar: document.getElementById("leftXBar") },
@@ -984,6 +1165,8 @@
         if (settings.rosbridgeUrl) el.rosbridgeUrl.value = settings.rosbridgeUrl;
         if (settings.cameraUrl) el.cameraUrl.value = settings.cameraUrl;
         if (settings.playbackPath) el.playbackPath.value = settings.playbackPath;
+        if (settings.playbackReferenceMode) playbackReferenceMode = settings.playbackReferenceMode;
+        if (settings.playbackProgressionMode) playbackProgressionMode = settings.playbackProgressionMode;
       } catch (error) {
         console.warn("Could not load dashboard settings", error);
       }
@@ -994,7 +1177,9 @@
         jetsonIp: el.jetsonIp.value.trim(),
         rosbridgeUrl: el.rosbridgeUrl.value.trim(),
         cameraUrl: el.cameraUrl.value.trim(),
-        playbackPath: el.playbackPath.value.trim()
+        playbackPath: el.playbackPath.value.trim(),
+        playbackReferenceMode,
+        playbackProgressionMode
       };
       try {
         localStorage.setItem(storageKey, JSON.stringify(settings));
@@ -1047,7 +1232,20 @@
         queue_length: 1,
         throttle_rate: 100
       });
+      send({
+        op: "subscribe",
+        topic: playbackStatusTopic,
+        type: "sub_interfaces/msg/PlaybackStatus",
+        throttle_rate: 100
+      });
+      send({
+        op: "subscribe",
+        topic: "/disable_pwm",
+        type: "std_msgs/msg/Bool"
+      });
       requestDepthParameters();
+      requestPlaybackParameters();
+      requestControlParameters();
       send({
         op: "subscribe",
         topic: unityCameraTopics.bottom,
@@ -1099,10 +1297,23 @@
             displayUnityCameraFrame(1, data.msg);
           } else if (data.topic === unityCameraTopics.bottom) {
             displayUnityCameraFrame(2, data.msg);
+          } else if (data.topic === playbackStatusTopic) {
+            handlePlaybackStatus(data.msg);
+          } else if (data.topic === "/disable_pwm") {
+            controlStopped = Boolean(data.msg && data.msg.data);
+            updateControlLocks();
           } else if (data.op === "service_response" && data.service === "/control_node/get_parameters") {
-            handleDepthParameters(data);
+            if (String(data.id || "").startsWith("depth-")) handleDepthParameters(data);
+            if (String(data.id || "").startsWith("control-settings-")) handleControlParameters(data);
+          } else if (data.op === "service_response" && data.service === "/playback_node/get_parameters") {
+            handlePlaybackParameters(data);
           } else if (data.op === "service_response" && data.service === "/control_node/set_parameters") {
-            handleDepthParameterResult(data);
+            if (String(data.id || "").startsWith("depth-")) handleDepthParameterResult(data);
+            if (String(data.id || "").startsWith("profile-")) handleProfileResult(data);
+          } else if (data.op === "service_response" && data.service === "/control_node/set_parameters_atomically") {
+            handleMatrixResult(data);
+          } else if (data.op === "service_response" && data.service === "/playback_node/set_parameters") {
+            handlePlaybackSettingsResult(data);
           } else if (data.op === "service_response" && data.service === "/playback_recording") {
             recordRequestPending = false;
             if (data.result === false || !data.values || !data.values.success) {
@@ -1243,6 +1454,170 @@
           ]
         }
       });
+    }
+
+    function requestPlaybackParameters() {
+      send({
+        op: "call_service",
+        id: "playback-settings-get-" + Date.now(),
+        service: "/playback_node/get_parameters",
+        type: "rcl_interfaces/srv/GetParameters",
+        args: {
+          names: [
+            "position_tolerance",
+            "depth_tolerance",
+            "angle_tolerance_deg",
+            "waypoint_timeout_sec"
+          ]
+        }
+      });
+    }
+
+    function handlePlaybackParameters(response) {
+      const values = response.values && response.values.values;
+      if (!values || values.length < 4) return;
+      el.positionTolerance.value = Number(values[0].double_value).toFixed(2);
+      el.depthTolerance.value = Number(values[1].double_value).toFixed(2);
+      el.angleTolerance.value = Number(values[2].double_value).toFixed(1);
+      el.waypointTimeout.value = Number(values[3].double_value).toFixed(1);
+    }
+
+    function applyPlaybackSettings() {
+      const values = [
+        Number(el.positionTolerance.value),
+        Number(el.depthTolerance.value),
+        Number(el.angleTolerance.value),
+        Number(el.waypointTimeout.value)
+      ];
+      if (!values.every(Number.isFinite) || values.some((value) => value <= 0)) {
+        el.controlSettingsStatus.textContent = "Tolérances invalides";
+        return;
+      }
+      send({
+        op: "call_service",
+        id: "playback-settings-set-" + Date.now(),
+        service: "/playback_node/set_parameters",
+        type: "rcl_interfaces/srv/SetParameters",
+        args: {
+          parameters: [
+            doubleParameter("position_tolerance", values[0]),
+            doubleParameter("depth_tolerance", values[1]),
+            doubleParameter("angle_tolerance_deg", values[2]),
+            doubleParameter("waypoint_timeout_sec", values[3])
+          ]
+        }
+      });
+      el.controlSettingsStatus.textContent = "Application des tolérances...";
+    }
+
+    function handlePlaybackSettingsResult(response) {
+      const results = response.values && response.values.results;
+      const failed = !results || results.some((result) => !result.successful);
+      el.controlSettingsStatus.textContent = failed ? "Erreur paramètres playback" : "Tolérances appliquées";
+    }
+
+    function requestControlParameters() {
+      send({
+        op: "call_service",
+        id: "control-settings-get-" + Date.now(),
+        service: "/control_node/get_parameters",
+        type: "rcl_interfaces/srv/GetParameters",
+        args: {
+          names: [
+            "state_cost_matrix",
+            "thruster_cost_matrix",
+            "lqr_profile",
+            "lqr_profiles.forward_tuned",
+            "lqr_profiles.turning_tuned"
+          ]
+        }
+      });
+    }
+
+    function handleControlParameters(response) {
+      const values = response.values && response.values.values;
+      if (!values || values.length < 5) return;
+      const qValues = values[0].double_array_value || [];
+      const rValues = values[1].double_array_value || [];
+      qInputs.forEach((input, index) => { input.value = Number(qValues[index] || 0).toFixed(4); });
+      rInputs.forEach((input, index) => { input.value = Number(rValues[index] || 0).toFixed(4); });
+      const profile = values[2].string_value || "standstill";
+      el.profileForwardBtn.disabled = !Boolean(values[3].bool_value);
+      el.profileTurningBtn.disabled = !Boolean(values[4].bool_value);
+      updateProfileButtons(profile);
+      el.controlSettingsStatus.textContent = "Paramètres synchronisés";
+    }
+
+    function applyMatrices() {
+      const qValues = qInputs.map((input) => Number(input.value));
+      const rValues = rInputs.map((input) => Number(input.value));
+      if (
+        !qValues.every((value) => Number.isFinite(value) && value >= 0)
+        || !rValues.every((value) => Number.isFinite(value) && value > 0)
+      ) {
+        el.controlSettingsStatus.textContent = "Q doit être >= 0 et R > 0";
+        return;
+      }
+      send({
+        op: "call_service",
+        id: "matrix-set-" + Date.now(),
+        service: "/control_node/set_parameters_atomically",
+        type: "rcl_interfaces/srv/SetParametersAtomically",
+        args: {
+          parameters: [
+            doubleArrayParameter("state_cost_matrix", qValues),
+            doubleArrayParameter("thruster_cost_matrix", rValues)
+          ]
+        }
+      });
+      el.controlSettingsStatus.textContent = "Application atomique Q/R...";
+    }
+
+    function handleMatrixResult(response) {
+      const result = response.values && response.values.result;
+      const failed = !result || !result.successful;
+      el.controlSettingsStatus.textContent = failed ? "Q/R refusées" : "Q/R appliquées";
+      if (!failed) requestControlParameters();
+    }
+
+    function selectProfile(profile) {
+      if (!controlStopped) {
+        el.profileStatus.textContent = "Appuie sur Select avant de changer de profil.";
+        return;
+      }
+      send({
+        op: "call_service",
+        id: "profile-set-" + Date.now(),
+        service: "/control_node/set_parameters",
+        type: "rcl_interfaces/srv/SetParameters",
+        args: { parameters: [stringParameter("lqr_profile", profile)] }
+      });
+      el.profileStatus.textContent = "Application du profil...";
+    }
+
+    function handleProfileResult(response) {
+      const results = response.values && response.values.results;
+      const failure = results && results.find((result) => !result.successful);
+      el.profileStatus.textContent = failure ? failure.reason : "Profil appliqué";
+      if (!failure) requestControlParameters();
+    }
+
+    function updateProfileButtons(profile) {
+      el.profileStandstillBtn.classList.toggle("active", profile === "standstill");
+      el.profileForwardBtn.classList.toggle("active", profile === "forward");
+      el.profileTurningBtn.classList.toggle("active", profile === "turning");
+    }
+
+    function doubleParameter(name, value) {
+      return { name, value: { type: 3, double_value: Number(value) } };
+    }
+
+    function doubleArrayParameter(name, values) {
+      return { name, value: { type: 8, double_array_value: values.map(Number) } };
+    }
+
+    function stringParameter(name, value) {
+      return { name, value: { type: 4, string_value: String(value) } };
     }
 
     function handleDepthParameters(response) {
@@ -1489,6 +1864,7 @@
       } else {
         el.recordBtn.textContent = recordEnabled ? "Arreter" : "Record";
       }
+      updateControlLocks();
     }
 
     function toggleRecording() {
@@ -1517,6 +1893,53 @@
       el.playPlaybackBtn.disabled = playbackRequestPending;
       el.stopPlaybackBtn.disabled = playbackRequestPending;
       el.playbackMetric.textContent = playbackRequestPending ? "En attente" : playbackStatus;
+      updateControlLocks();
+    }
+
+    function handlePlaybackStatus(msg) {
+      if (!msg) return;
+      playbackReferenceMode = msg.reference_mode || playbackReferenceMode;
+      playbackProgressionMode = msg.progression_mode || playbackProgressionMode;
+      playbackActive = ["playing", "recording"].includes(msg.state);
+      const current = Number(msg.current_index || 0);
+      const total = Number(msg.waypoint_count || 0);
+      playbackStatus = msg.state + (total ? " " + (current + 1) + "/" + total : "");
+      if (msg.error) playbackStatus = msg.state + ": " + msg.error;
+      updatePlaybackModeButtons();
+      updatePlaybackButtons();
+    }
+
+    function setPlaybackReference(mode) {
+      if (playbackActive || recordEnabled) return;
+      playbackReferenceMode = mode;
+      updatePlaybackModeButtons();
+      saveSettings();
+    }
+
+    function setPlaybackProgression(mode) {
+      if (playbackActive || recordEnabled) return;
+      playbackProgressionMode = mode;
+      updatePlaybackModeButtons();
+      saveSettings();
+    }
+
+    function updatePlaybackModeButtons() {
+      el.referenceBodyBtn.classList.toggle("active", playbackReferenceMode === "body");
+      el.referenceWorldBtn.classList.toggle("active", playbackReferenceMode === "world");
+      el.progressionSetpointBtn.classList.toggle("active", playbackProgressionMode === "setpoint");
+      el.progressionTimestampBtn.classList.toggle("active", playbackProgressionMode === "timestamp");
+    }
+
+    function updateControlLocks() {
+      const modeLocked = playbackActive || recordEnabled;
+      [
+        el.referenceBodyBtn,
+        el.referenceWorldBtn,
+        el.progressionSetpointBtn,
+        el.progressionTimestampBtn
+      ].forEach((button) => { button.disabled = modeLocked; });
+      el.profileStandstillBtn.disabled = !controlStopped;
+      el.applyMatricesBtn.disabled = !controlStopped;
     }
 
     function sendPlaybackCommand(command) {
@@ -1531,7 +1954,9 @@
         args: {
           command,
           file_path: filePath,
-          loop: false
+          loop: false,
+          reference_mode: playbackReferenceMode,
+          progression_mode: playbackProgressionMode
         }
       });
       if (!sent) {
@@ -1572,6 +1997,18 @@
       el.publishRate.textContent = delta + " Hz";
     }
 
+    function selectDashboardTab(tabName) {
+      document.querySelectorAll("[data-dashboard-tab]").forEach((panel) => {
+        panel.classList.toggle("tab-hidden", panel.dataset.dashboardTab !== tabName);
+      });
+      document.querySelectorAll("[data-tab-button]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.tabButton === tabName);
+      });
+    }
+
+    document.querySelectorAll("[data-tab-button]").forEach((button) => {
+      button.addEventListener("click", () => selectDashboardTab(button.dataset.tabButton));
+    });
     document.getElementById("connectBtn").addEventListener("click", connect);
     document.getElementById("localBtn").addEventListener("click", () => applyHost("127.0.0.1"));
     document.getElementById("jetsonBtn").addEventListener("click", () => applyHost("192.168.0.10"));
@@ -1579,6 +2016,16 @@
     document.getElementById("stopBtn").addEventListener("click", () => sendSynthetic(6));
     document.getElementById("recordBtn").addEventListener("click", toggleRecording);
     document.getElementById("applyDepthLimitsBtn").addEventListener("click", applyDepthLimits);
+    document.getElementById("referenceBodyBtn").addEventListener("click", () => setPlaybackReference("body"));
+    document.getElementById("referenceWorldBtn").addEventListener("click", () => setPlaybackReference("world"));
+    document.getElementById("progressionSetpointBtn").addEventListener("click", () => setPlaybackProgression("setpoint"));
+    document.getElementById("progressionTimestampBtn").addEventListener("click", () => setPlaybackProgression("timestamp"));
+    document.getElementById("applyPlaybackSettingsBtn").addEventListener("click", applyPlaybackSettings);
+    document.getElementById("reloadMatricesBtn").addEventListener("click", requestControlParameters);
+    document.getElementById("applyMatricesBtn").addEventListener("click", applyMatrices);
+    document.getElementById("profileStandstillBtn").addEventListener("click", () => selectProfile("standstill"));
+    document.getElementById("profileForwardBtn").addEventListener("click", () => selectProfile("forward"));
+    document.getElementById("profileTurningBtn").addEventListener("click", () => selectProfile("turning"));
     document.getElementById("loadPlaybackBtn").addEventListener("click", () => sendPlaybackCommand("load"));
     document.getElementById("playPlaybackBtn").addEventListener("click", () => sendPlaybackCommand("play"));
     document.getElementById("stopPlaybackBtn").addEventListener("click", () => sendPlaybackCommand("stop"));
@@ -1608,6 +2055,8 @@
     });
 
     loadSettings();
+    updatePlaybackModeButtons();
+    updateControlLocks();
     if ((window.location.protocol === "http:" || window.location.protocol === "https:") && window.location.hostname) {
       applyHost(window.location.hostname);
       setTimeout(connect, 150);
