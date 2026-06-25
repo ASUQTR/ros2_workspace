@@ -33,6 +33,7 @@ control_node:
       # LQR target uses NED: positive depth points down. The Bar30/EKF value is
       # negative ENU Z and control_node converts it to positive NED depth.
       default_depth_target: 0.5
+      depth_limits_enabled: true
       min_depth_target: 0.2
       max_depth_target: 0.5
       depth_step: 0.1

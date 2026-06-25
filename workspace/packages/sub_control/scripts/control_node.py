@@ -123,6 +123,7 @@ class ControlNode(Node):
         self.declare_parameter('damping_sign', DEFAULT_DAMPING_SIGN)
         self.declare_parameter('max_thruster_force_newton', DEFAULT_MAX_THRUSTER_FORCE)
         self.declare_parameter('manual_assisted.default_depth_target', DEFAULT_MANUAL_ASSISTED_DEPTH)
+        self.declare_parameter('manual_assisted.depth_limits_enabled', True)
         self.declare_parameter('manual_assisted.min_depth_target', DEFAULT_MANUAL_ASSISTED_MIN_DEPTH)
         self.declare_parameter('manual_assisted.max_depth_target', DEFAULT_MANUAL_ASSISTED_MAX_DEPTH)
         self.declare_parameter('manual_assisted.depth_step', DEFAULT_MANUAL_ASSISTED_DEPTH_STEP)
@@ -144,6 +145,7 @@ class ControlNode(Node):
         self.target_state = np.full(12, np.nan, dtype=np.float64) 
         self.manual_assisted_carrot_body = np.zeros(2, dtype=np.float64)
         self.manual_assisted_default_depth_target = DEFAULT_MANUAL_ASSISTED_DEPTH
+        self.manual_assisted_depth_limits_enabled = True
         self.manual_assisted_min_depth_target = DEFAULT_MANUAL_ASSISTED_MIN_DEPTH
         self.manual_assisted_max_depth_target = DEFAULT_MANUAL_ASSISTED_MAX_DEPTH
         self.manual_assisted_depth_step = DEFAULT_MANUAL_ASSISTED_DEPTH_STEP
@@ -182,6 +184,7 @@ class ControlNode(Node):
         self.damping_sign = float(self.get_parameter('damping_sign').value)
         self.max_thruster_force_newton = float(self.get_parameter('max_thruster_force_newton').value)
         self.manual_assisted_default_depth_target = float(self.get_parameter('manual_assisted.default_depth_target').value)
+        self.manual_assisted_depth_limits_enabled = bool(self.get_parameter('manual_assisted.depth_limits_enabled').value)
         self.manual_assisted_min_depth_target = float(self.get_parameter('manual_assisted.min_depth_target').value)
         self.manual_assisted_max_depth_target = float(self.get_parameter('manual_assisted.max_depth_target').value)
         self.manual_assisted_depth_step = float(self.get_parameter('manual_assisted.depth_step').value)
@@ -195,11 +198,13 @@ class ControlNode(Node):
         self.manual_assisted_max_pitch = math.radians(float(self.get_parameter('manual_assisted.max_pitch_deg').value))
         self.manual_assisted_joystick_curve = float(self.get_parameter('manual_assisted.joystick_curve').value)
         self.manual_assisted_gamepad_timeout = float(self.get_parameter('manual_assisted.gamepad_timeout_sec').value)
-        self.manual_assisted_depth_target = self._clamp(
-            self.manual_assisted_default_depth_target,
-            self.manual_assisted_min_depth_target,
-            self.manual_assisted_max_depth_target
-        )
+        self.manual_assisted_depth_target = self.manual_assisted_default_depth_target
+        if self.manual_assisted_depth_limits_enabled:
+            self.manual_assisted_depth_target = self._clamp(
+                self.manual_assisted_depth_target,
+                self.manual_assisted_min_depth_target,
+                self.manual_assisted_max_depth_target
+            )
         
         # Bind dynamic reconfigure callback
         self.add_on_set_parameters_callback(self.parameter_callback)
@@ -292,6 +297,13 @@ class ControlNode(Node):
         self.control_target_pub = self.create_publisher(
             ControlTarget, 'control/target', only_latest_qos
         )
+
+        if self._current_mode == ControlMode.MANUAL_ASSISTED:
+            self._publish_software_kill_state(True)
+            self._publish_zero_thrust()
+            self.get_logger().warn(
+                "MANUAL_ASSISTED ready but STOPPED. Press Start to arm."
+            )
 
         # --- Action Server ---
         self._action_server = ActionServer(
@@ -404,7 +416,13 @@ class ControlNode(Node):
             return False
         if hasattr(self, '_last_mode_for_transition') and self._last_mode_for_transition != self._current_mode:
             if self._current_mode == ControlMode.MANUAL_ASSISTED:
-                self._initialize_manual_assisted_targets()
+                self.software_kill_active = True
+                if hasattr(self, 'disable_pwm_pub'):
+                    self._publish_software_kill_state(True)
+                    self._publish_zero_thrust()
+                    self.get_logger().warn(
+                        "MANUAL_ASSISTED selected but STOPPED. Press Start to arm."
+                    )
             self._last_mode_for_transition = self._current_mode
         self.get_logger().info(f"SUB Control mode set as: {self._current_mode.name}")
         return True
@@ -758,6 +776,8 @@ class ControlNode(Node):
             return
 
         if self._current_mode == ControlMode.MANUAL_ASSISTED:
+            if self.software_kill_active:
+                return
             self._manual_assisted_gamepad_update(
                 forward_cmd=left_stick_y,
                 yaw_cmd=left_stick_x,
@@ -891,6 +911,21 @@ class ControlNode(Node):
 
     def _set_manual_assisted_parameter(self, param):
         """Update one manual assisted tuning parameter at runtime."""
+        if param.name == 'manual_assisted.depth_limits_enabled':
+            if bool(param.value) and self.manual_assisted_min_depth_target > self.manual_assisted_max_depth_target:
+                return SetParametersResult(
+                    successful=False,
+                    reason='manual_assisted.min_depth_target must be <= max_depth_target'
+                )
+            self.manual_assisted_depth_limits_enabled = bool(param.value)
+            if self.manual_assisted_depth_limits_enabled:
+                self._clamp_manual_assisted_depth_targets()
+            self.get_logger().warn(
+                f"MANUAL_ASSISTED depth limits "
+                f"{'enabled' if self.manual_assisted_depth_limits_enabled else 'disabled'}."
+            )
+            return SetParametersResult(successful=True)
+
         try:
             value = float(param.value)
         except (TypeError, ValueError):
@@ -898,9 +933,21 @@ class ControlNode(Node):
 
         if param.name == 'manual_assisted.default_depth_target':
             self.manual_assisted_default_depth_target = value
+            self.manual_assisted_base_depth_target = value
+            self.manual_assisted_depth_target = value
         elif param.name == 'manual_assisted.min_depth_target':
+            if self.manual_assisted_depth_limits_enabled and value > self.manual_assisted_max_depth_target:
+                return SetParametersResult(
+                    successful=False,
+                    reason='manual_assisted.min_depth_target must be <= max_depth_target'
+                )
             self.manual_assisted_min_depth_target = value
         elif param.name == 'manual_assisted.max_depth_target':
+            if self.manual_assisted_depth_limits_enabled and value < self.manual_assisted_min_depth_target:
+                return SetParametersResult(
+                    successful=False,
+                    reason='manual_assisted.max_depth_target must be >= min_depth_target'
+                )
             self.manual_assisted_max_depth_target = value
         elif param.name == 'manual_assisted.depth_step':
             if value <= 0.0:
@@ -949,11 +996,20 @@ class ControlNode(Node):
         else:
             return SetParametersResult(successful=False, reason=f'Unhandled parameter: {param.name}')
 
-        if self.manual_assisted_min_depth_target > self.manual_assisted_max_depth_target:
+        if (
+            self.manual_assisted_depth_limits_enabled
+            and self.manual_assisted_min_depth_target > self.manual_assisted_max_depth_target
+        ):
             return SetParametersResult(
                 successful=False,
                 reason='manual_assisted.min_depth_target must be <= max_depth_target'
             )
+        if self.manual_assisted_depth_limits_enabled:
+            self._clamp_manual_assisted_depth_targets()
+        self._limit_manual_assisted_carrot()
+        return SetParametersResult(successful=True)
+
+    def _clamp_manual_assisted_depth_targets(self):
         self.manual_assisted_depth_target = self._clamp(
             self.manual_assisted_depth_target,
             self.manual_assisted_min_depth_target,
@@ -964,26 +1020,25 @@ class ControlNode(Node):
             self.manual_assisted_min_depth_target,
             self.manual_assisted_max_depth_target
         )
-        self._limit_manual_assisted_carrot()
-        return SetParametersResult(successful=True)
 
     def _activate_software_kill(self):
         """Disable PWM and zero thrusters until Start re-arms manual assisted mode."""
         if not self.software_kill_active:
             self.get_logger().error("SOFTWARE KILL ACTIVATED: disabling PWM and zeroing thrusters.")
         self.software_kill_active = True
-        disable_msg = Bool()
-        disable_msg.data = True
-        self.disable_pwm_pub.publish(disable_msg)
+        self._publish_software_kill_state(True)
         self._publish_zero_thrust()
 
     def _clear_software_kill(self):
-        """Re-enable PWM after a Select stop."""
+        """Re-enable PWM after an explicit Start command."""
         if self.software_kill_active:
             self.get_logger().warn("SOFTWARE KILL CLEARED: enabling PWM.")
         self.software_kill_active = False
+        self._publish_software_kill_state(False)
+
+    def _publish_software_kill_state(self, disabled):
         disable_msg = Bool()
-        disable_msg.data = False
+        disable_msg.data = bool(disabled)
         self.disable_pwm_pub.publish(disable_msg)
 
     def _publish_zero_thrust(self):
@@ -996,24 +1051,28 @@ class ControlNode(Node):
         self.manual_assisted_last_gamepad_time = self.manual_assisted_last_update_time
 
         if np.isnan(self.current_state[0]):
-            self.manual_assisted_base_depth_target = self._clamp(
-                self.manual_assisted_default_depth_target,
-                self.manual_assisted_min_depth_target,
-                self.manual_assisted_max_depth_target
-            )
+            self.manual_assisted_base_depth_target = self.manual_assisted_default_depth_target
+            if self.manual_assisted_depth_limits_enabled:
+                self.manual_assisted_base_depth_target = self._clamp(
+                    self.manual_assisted_base_depth_target,
+                    self.manual_assisted_min_depth_target,
+                    self.manual_assisted_max_depth_target
+                )
             self.manual_assisted_depth_target = self.manual_assisted_base_depth_target
             self.manual_assisted_yaw_target = 0.0
             self.get_logger().warn(
-                "MANUAL_ASSISTED entered before odometry is available; using default depth target.",
+                "Cannot arm MANUAL_ASSISTED: odometry is not available.",
                 throttle_duration_sec=2.0
             )
-            return
+            return False
 
-        self.manual_assisted_base_depth_target = self._clamp(
-            self.manual_assisted_default_depth_target,
-            self.manual_assisted_min_depth_target,
-            self.manual_assisted_max_depth_target
-        )
+        self.manual_assisted_base_depth_target = self.manual_assisted_default_depth_target
+        if self.manual_assisted_depth_limits_enabled:
+            self.manual_assisted_base_depth_target = self._clamp(
+                self.manual_assisted_base_depth_target,
+                self.manual_assisted_min_depth_target,
+                self.manual_assisted_max_depth_target
+            )
         self.manual_assisted_depth_target = self.manual_assisted_base_depth_target
         self.manual_assisted_yaw_target = self.current_state[5]
 
@@ -1030,6 +1089,7 @@ class ControlNode(Node):
             f"MANUAL_ASSISTED armed: depth={self.manual_assisted_depth_target:.2f} m, "
             f"yaw={math.degrees(self.manual_assisted_yaw_target):.1f} deg"
         )
+        return True
 
     def _manual_assisted_gamepad_update(
         self,
@@ -1066,11 +1126,12 @@ class ControlNode(Node):
             self.manual_assisted_base_depth_target
             + depth_offset_cmd * self.manual_assisted_max_depth_offset
         )
-        self.manual_assisted_depth_target = self._clamp(
-            self.manual_assisted_depth_target,
-            self.manual_assisted_min_depth_target,
-            self.manual_assisted_max_depth_target
-        )
+        if self.manual_assisted_depth_limits_enabled:
+            self.manual_assisted_depth_target = self._clamp(
+                self.manual_assisted_depth_target,
+                self.manual_assisted_min_depth_target,
+                self.manual_assisted_max_depth_target
+            )
 
         if forward == 0.0:
             self.manual_assisted_carrot_body[:] = 0.0
@@ -1231,13 +1292,11 @@ class ControlNode(Node):
         """
         retval = False
         if mode_switch_button and not self.last_mode_switch_button_state:
-            if self.software_kill_active:
-                self._clear_software_kill()
-            if self._current_mode == ControlMode.MANUAL_ASSISTED:
-                self._initialize_manual_assisted_targets()
-            else:
+            if self._current_mode != ControlMode.MANUAL_ASSISTED:
                 updated_param = Parameter('control_mode', value='manual_assisted')
                 self.set_parameters([updated_param])
+            if self._initialize_manual_assisted_targets():
+                self._clear_software_kill()
             retval = True
         self.last_mode_switch_button_state = mode_switch_button
         return retval

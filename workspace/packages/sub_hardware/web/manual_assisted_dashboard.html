@@ -715,6 +715,31 @@
             <button id="armBtn" class="primary" type="button">Start / Arm</button>
             <button id="stopBtn" class="danger" type="button">Select / Stop</button>
           </div>
+          <div class="metric">
+            <div class="metric-label">Limites profondeur NED (m, positif vers le bas)</div>
+            <div class="field-grid" style="margin-top: 8px;">
+              <label>
+                <input id="depthLimitsEnabled" type="checkbox" checked>
+                Limiter la profondeur
+              </label>
+              <div class="button-row three">
+                <div class="field">
+                  <label for="depthBaseTarget">Cible</label>
+                  <input id="depthBaseTarget" type="number" min="-1" max="10" step="0.05" value="0.5">
+                </div>
+                <div class="field">
+                  <label for="depthMinTarget">Min</label>
+                  <input id="depthMinTarget" type="number" min="-1" max="10" step="0.05" value="0.2">
+                </div>
+                <div class="field">
+                  <label for="depthMaxTarget">Max</label>
+                  <input id="depthMaxTarget" type="number" min="-1" max="10" step="0.05" value="0.5">
+                </div>
+              </div>
+              <button id="applyDepthLimitsBtn" class="ghost" type="button">Appliquer</button>
+              <div id="depthLimitsStatus" class="tiny">Non synchronise</div>
+            </div>
+          </div>
           <button id="recordBtn" class="recording" type="button">Record</button>
           <div class="field">
             <label for="playbackPath">Trajet JSON</label>
@@ -863,6 +888,8 @@
     let recordRequestPending = false;
     let playbackRequestPending = false;
     let playbackStatus = "-";
+    let depthParameterRequestsPending = 0;
+    let depthParameterQueue = [];
     let physicalCamerasAvailable = false;
     let physicalCameraBase = "";
     const lastUnityFrameAt = { 1: 0, 2: 0 };
@@ -890,6 +917,12 @@
       playPlaybackBtn: document.getElementById("playPlaybackBtn"),
       stopPlaybackBtn: document.getElementById("stopPlaybackBtn"),
       playbackMetric: document.getElementById("playbackMetric"),
+      depthLimitsEnabled: document.getElementById("depthLimitsEnabled"),
+      depthBaseTarget: document.getElementById("depthBaseTarget"),
+      depthMinTarget: document.getElementById("depthMinTarget"),
+      depthMaxTarget: document.getElementById("depthMaxTarget"),
+      applyDepthLimitsBtn: document.getElementById("applyDepthLimitsBtn"),
+      depthLimitsStatus: document.getElementById("depthLimitsStatus"),
       cam1Card: document.getElementById("cam1Card"),
       cam2Card: document.getElementById("cam2Card"),
       cam1: document.getElementById("cam1"),
@@ -1014,6 +1047,7 @@
         queue_length: 1,
         throttle_rate: 100
       });
+      requestDepthParameters();
       send({
         op: "subscribe",
         topic: unityCameraTopics.bottom,
@@ -1065,6 +1099,10 @@
             displayUnityCameraFrame(1, data.msg);
           } else if (data.topic === unityCameraTopics.bottom) {
             displayUnityCameraFrame(2, data.msg);
+          } else if (data.op === "service_response" && data.service === "/control_node/get_parameters") {
+            handleDepthParameters(data);
+          } else if (data.op === "service_response" && data.service === "/control_node/set_parameters") {
+            handleDepthParameterResult(data);
           } else if (data.op === "service_response" && data.service === "/playback_recording") {
             recordRequestPending = false;
             if (data.result === false || !data.values || !data.values.success) {
@@ -1188,6 +1226,108 @@
         "offline",
         state !== "UNITY" && state !== "PHYSIQUE" && state !== "loading"
       );
+    }
+
+    function requestDepthParameters() {
+      send({
+        op: "call_service",
+        id: "depth-parameters-get-" + Date.now(),
+        service: "/control_node/get_parameters",
+        type: "rcl_interfaces/srv/GetParameters",
+        args: {
+          names: [
+            "manual_assisted.depth_limits_enabled",
+            "manual_assisted.default_depth_target",
+            "manual_assisted.min_depth_target",
+            "manual_assisted.max_depth_target"
+          ]
+        }
+      });
+    }
+
+    function handleDepthParameters(response) {
+      const values = response.values && response.values.values;
+      if (!values || values.length < 4) return;
+      el.depthLimitsEnabled.checked = Boolean(values[0].bool_value);
+      el.depthBaseTarget.value = Number(values[1].double_value).toFixed(2);
+      el.depthMinTarget.value = Number(values[2].double_value).toFixed(2);
+      el.depthMaxTarget.value = Number(values[3].double_value).toFixed(2);
+      el.depthLimitsStatus.textContent = el.depthLimitsEnabled.checked
+        ? "Actif : " + el.depthMinTarget.value + " a " + el.depthMaxTarget.value + " m"
+        : "Desactive";
+    }
+
+    function setControlParameter(name, type, value) {
+      const parameterValue = { type };
+      if (type === 1) parameterValue.bool_value = Boolean(value);
+      if (type === 3) parameterValue.double_value = Number(value);
+      return send({
+        op: "call_service",
+        id: "depth-parameter-set-" + name + "-" + Date.now(),
+        service: "/control_node/set_parameters",
+        type: "rcl_interfaces/srv/SetParameters",
+        args: {
+          parameters: [{ name, value: parameterValue }]
+        }
+      });
+    }
+
+    function applyDepthLimits() {
+      const base = Number(el.depthBaseTarget.value);
+      const minDepth = Number(el.depthMinTarget.value);
+      const maxDepth = Number(el.depthMaxTarget.value);
+      if (
+        ![base, minDepth, maxDepth].every(Number.isFinite)
+        || minDepth > maxDepth
+        || (el.depthLimitsEnabled.checked && (base < minDepth || base > maxDepth))
+      ) {
+        el.depthLimitsStatus.textContent = "Valeurs invalides";
+        return;
+      }
+
+      const requests = [
+        ["manual_assisted.depth_limits_enabled", 1, false],
+        ["manual_assisted.max_depth_target", 3, maxDepth],
+        ["manual_assisted.min_depth_target", 3, minDepth],
+        ["manual_assisted.default_depth_target", 3, base],
+        ["manual_assisted.depth_limits_enabled", 1, el.depthLimitsEnabled.checked]
+      ];
+      depthParameterQueue = requests;
+      depthParameterRequestsPending = requests.length;
+      el.applyDepthLimitsBtn.disabled = true;
+      el.depthLimitsStatus.textContent = "Application...";
+      sendNextDepthParameter();
+    }
+
+    function sendNextDepthParameter() {
+      if (depthParameterQueue.length === 0) {
+        depthParameterRequestsPending = 0;
+        el.applyDepthLimitsBtn.disabled = false;
+        requestDepthParameters();
+        return;
+      }
+      const [name, type, value] = depthParameterQueue.shift();
+      if (!setControlParameter(name, type, value)) {
+        depthParameterQueue = [];
+        depthParameterRequestsPending = 0;
+        el.applyDepthLimitsBtn.disabled = false;
+        el.depthLimitsStatus.textContent = "ROSBridge hors ligne";
+      }
+    }
+
+    function handleDepthParameterResult(response) {
+      const results = response.values && response.values.results;
+      const failed = !results || results.some((result) => !result.successful);
+      if (failed) {
+        const reason = results && results.find((result) => !result.successful);
+        el.depthLimitsStatus.textContent = "Erreur: " + ((reason && reason.reason) || "parametre refuse");
+        depthParameterQueue = [];
+        depthParameterRequestsPending = 0;
+        el.applyDepthLimitsBtn.disabled = false;
+        return;
+      }
+      depthParameterRequestsPending = Math.max(0, depthParameterRequestsPending - 1);
+      sendNextDepthParameter();
     }
 
     function buttonValue(gp, index) {
@@ -1438,6 +1578,7 @@
     document.getElementById("armBtn").addEventListener("click", () => sendSynthetic(7));
     document.getElementById("stopBtn").addEventListener("click", () => sendSynthetic(6));
     document.getElementById("recordBtn").addEventListener("click", toggleRecording);
+    document.getElementById("applyDepthLimitsBtn").addEventListener("click", applyDepthLimits);
     document.getElementById("loadPlaybackBtn").addEventListener("click", () => sendPlaybackCommand("load"));
     document.getElementById("playPlaybackBtn").addEventListener("click", () => sendPlaybackCommand("play"));
     document.getElementById("stopPlaybackBtn").addEventListener("click", () => sendPlaybackCommand("stop"));

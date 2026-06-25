@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from typing import cast
 import json
+import math
 
 import rclpy
 from rclpy.node import Node
@@ -8,6 +9,8 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
 
+from nav_msgs.msg import Odometry
+from std_msgs.msg import Bool
 from sub_interfaces.msg import ControlTarget
 from sub_interfaces.srv import PlaybackCommand, PlaybackRecording, PlaybackPath
 
@@ -20,6 +23,24 @@ class PlaybackNode(Node):
             float,
             self.declare_parameter('waypoint_timing', 0.2).value
         )
+        self.position_tolerance = float(
+            self.declare_parameter('position_tolerance', 0.15).value
+        )
+        self.depth_tolerance = float(
+            self.declare_parameter('depth_tolerance', 0.10).value
+        )
+        self.angle_tolerance = math.radians(float(
+            self.declare_parameter('angle_tolerance_deg', 10.0).value
+        ))
+        self.waypoint_timeout = float(
+            self.declare_parameter('waypoint_timeout_sec', 8.0).value
+        )
+        self.min_waypoint_hold = float(
+            self.declare_parameter('min_waypoint_hold_sec', 0.2).value
+        )
+        self.target_republish_period = float(
+            self.declare_parameter('target_republish_period_sec', 0.2).value
+        )
         self.waypoints: list[dict] = []
         self.last_clock = None
         self.recording_started_at = None
@@ -29,7 +50,11 @@ class PlaybackNode(Node):
         self.is_playing = False
         self.playback_loop = False
         self.playback_started_at = None
+        self.active_waypoint_started_at = None
+        self.last_target_publish_at = None
         self.playback_index = 0
+        self.current_odometry = None
+        self.control_stopped = True
 
         self.playback_service = self.create_service(
             PlaybackRecording,
@@ -58,8 +83,20 @@ class PlaybackNode(Node):
             ControlTarget, 'control/target', self.target_callback, only_latest_qos,
             callback_group=self.target_cb_group
         )
+        self.odometry_subscription = self.create_subscription(
+            Odometry, 'odometry/filtered', self.odometry_callback, only_latest_qos,
+            callback_group=self.target_cb_group
+        )
         self.playback_target_pub = self.create_publisher(
             ControlTarget, 'control/playback_target', only_latest_qos
+        )
+        latched_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL
+        )
+        self.control_stop_subscription = self.create_subscription(
+            Bool, 'disable_pwm', self.control_stop_callback, latched_qos
         )
         self.playback_timer = self.create_timer(0.05, self.playback_timer_callback)
 
@@ -151,19 +188,38 @@ class PlaybackNode(Node):
     def start_playback(self, loop=False):
         if not self.loaded_waypoints:
             return False, 'No playback file loaded'
+        if self.current_odometry is None:
+            return False, 'Cannot start playback: no odometry available'
+        if self.control_stopped:
+            return False, 'Cannot start playback: MANUAL_ASSISTED is stopped; press Start first'
 
         self.playback_loop = bool(loop)
         self.playback_started_at = self.get_clock().now()
         self.playback_index = 0
         self.is_playing = True
-        message = f'Started playback with {len(self.loaded_waypoints)} waypoint(s)'
+        self.activate_current_waypoint()
+        message = (
+            f'Started arrival-gated playback with '
+            f'{len(self.loaded_waypoints)} waypoint(s)'
+        )
         self.get_logger().info(message)
         return True, message
 
     def stop_playback(self):
         self.is_playing = False
         self.playback_started_at = None
+        self.active_waypoint_started_at = None
+        self.last_target_publish_at = None
         self.playback_index = 0
+
+    def odometry_callback(self, msg):
+        self.current_odometry = msg
+
+    def control_stop_callback(self, msg):
+        self.control_stopped = bool(msg.data)
+        if self.control_stopped and self.is_playing:
+            self.stop_playback()
+            self.get_logger().warn('Playback stopped because MANUAL_ASSISTED was stopped')
 
     def normalize_waypoint(self, item, idx):
         if isinstance(item, dict):
@@ -207,27 +263,97 @@ class PlaybackNode(Node):
         }
 
     def playback_timer_callback(self):
-        if not self.is_playing or self.playback_started_at is None:
+        if not self.is_playing or self.active_waypoint_started_at is None:
             return
         if not self.loaded_waypoints:
             self.stop_playback()
             return
+        if self.control_stopped:
+            self.stop_playback()
+            return
+        if self.current_odometry is None:
+            return
 
-        elapsed = (self.get_clock().now() - self.playback_started_at).nanoseconds / 1e9
-        while self.playback_index < len(self.loaded_waypoints):
-            waypoint = self.loaded_waypoints[self.playback_index]
-            if elapsed < waypoint['time_from_start']:
-                break
+        now = self.get_clock().now()
+        active_elapsed = (now - self.active_waypoint_started_at).nanoseconds / 1e9
+        since_publish = float('inf')
+        if self.last_target_publish_at is not None:
+            since_publish = (now - self.last_target_publish_at).nanoseconds / 1e9
+
+        waypoint = self.loaded_waypoints[self.playback_index]
+        if since_publish >= self.target_republish_period:
             self.publish_playback_target(waypoint)
-            self.playback_index += 1
+            self.last_target_publish_at = now
 
-        if self.playback_index >= len(self.loaded_waypoints):
-            if self.playback_loop:
-                self.playback_started_at = self.get_clock().now()
-                self.playback_index = 0
-            else:
-                self.stop_playback()
-                self.get_logger().info('Playback completed')
+        if active_elapsed >= self.min_waypoint_hold and self.is_waypoint_reached(waypoint):
+            self.advance_waypoint()
+            return
+
+        if active_elapsed >= self.waypoint_timeout:
+            failed_index = self.playback_index
+            self.stop_playback()
+            self.get_logger().error(
+                f'Playback stopped: waypoint {failed_index} timed out after '
+                f'{self.waypoint_timeout:.1f} s'
+            )
+
+    def activate_current_waypoint(self):
+        if not self.is_playing or self.playback_index >= len(self.loaded_waypoints):
+            return
+        now = self.get_clock().now()
+        self.active_waypoint_started_at = now
+        self.last_target_publish_at = now
+        self.publish_playback_target(self.loaded_waypoints[self.playback_index])
+        self.get_logger().info(
+            f'Playback target {self.playback_index + 1}/{len(self.loaded_waypoints)}'
+        )
+
+    def advance_waypoint(self):
+        self.playback_index += 1
+        if self.playback_index < len(self.loaded_waypoints):
+            self.activate_current_waypoint()
+            return
+
+        if self.playback_loop:
+            self.playback_index = 0
+            self.playback_started_at = self.get_clock().now()
+            self.activate_current_waypoint()
+            return
+
+        self.stop_playback()
+        self.get_logger().info('Playback completed')
+
+    def is_waypoint_reached(self, waypoint):
+        pose = self.current_odometry.pose.pose
+        dx = waypoint['position'][0] - pose.position.x
+        dy = waypoint['position'][1] - pose.position.y
+        dz = waypoint['position'][2] - pose.position.z
+        horizontal_error = math.hypot(dx, dy)
+        depth_error = abs(dz)
+        angle_error = self.quaternion_angular_distance(
+            [
+                pose.orientation.x,
+                pose.orientation.y,
+                pose.orientation.z,
+                pose.orientation.w
+            ],
+            waypoint['angles']
+        )
+        return (
+            horizontal_error <= self.position_tolerance
+            and depth_error <= self.depth_tolerance
+            and angle_error <= self.angle_tolerance
+        )
+
+    @staticmethod
+    def quaternion_angular_distance(first, second):
+        first_norm = math.sqrt(sum(value * value for value in first))
+        second_norm = math.sqrt(sum(value * value for value in second))
+        if first_norm <= 1e-9 or second_norm <= 1e-9:
+            return math.inf
+        dot = sum(a * b for a, b in zip(first, second)) / (first_norm * second_norm)
+        dot = max(-1.0, min(1.0, abs(dot)))
+        return 2.0 * math.acos(dot)
 
     def publish_playback_target(self, waypoint):
         msg = ControlTarget()
