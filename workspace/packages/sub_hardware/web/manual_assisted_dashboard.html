@@ -933,7 +933,7 @@
               <div id="lqrProfileMetric" class="metric-value">Standstill</div>
             </div>
           </div>
-          <div class="tiny">Start arme MANUAL_ASSISTED. Select active l'arret logiciel. A/Y/B changent Standstill/Forward/Forward + Turning.</div>
+          <div class="tiny">Start arme MANUAL_ASSISTED. Select active l'arret logiciel. A/Y/B changent Standstill/Forward/Turning.</div>
         </div>
       </section>
 
@@ -1055,7 +1055,7 @@
           <div class="profile-map pilot-profile-map">
             <div id="pilotProfileStandstill" class="profile-chip active"><span>A</span>Standstill</div>
             <div id="pilotProfileForward" class="profile-chip"><span>Y</span>Forward</div>
-            <div id="pilotProfileTurning" class="profile-chip"><span>B</span>Forward + Turning</div>
+            <div id="pilotProfileTurning" class="profile-chip"><span>B</span>Turning</div>
           </div>
           <div class="pilot-layout">
             <div class="gamepad-visual" aria-label="Gamepad state">
@@ -1231,7 +1231,7 @@
             <div class="segmented three" style="margin-top: 8px;">
               <button id="profileStandstillBtn" class="active" type="button">Standstill</button>
               <button id="profileForwardBtn" type="button">Forward</button>
-              <button id="profileTurningBtn" type="button">Forward + Turning</button>
+              <button id="profileTurningBtn" type="button">Turning</button>
             </div>
             <div class="matrix-grid" style="margin-top: 8px;">
               <div class="field">
@@ -2076,7 +2076,7 @@
 
     function lqrProfileLabel(profile) {
       if (profile === "forward") return "Forward";
-      if (profile === "turning") return "Forward + Turning";
+      if (profile === "turning") return "Turning";
       return "Standstill";
     }
 
