@@ -24,3 +24,8 @@ if [ -f "/workspace/install/setup.bash" ]; then
     source /workspace/install/setup.bash
 fi
 ```
+
+# Driver brping
+```bash
+pip install --user bluerobotics-ping --upgrade
+```

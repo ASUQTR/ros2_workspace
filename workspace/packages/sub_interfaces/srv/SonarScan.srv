@@ -1,5 +1,5 @@
-uint8 start_angle
-uint8 stop_angle
-uint8 desired_range
+uint16 start_angle   # Start angle in degrees (0–359)
+uint16 stop_angle    # Stop angle in degrees (0–359); if start > stop, scan wraps through 0°
+uint16 desired_range # Maximum range in meters
 ---
 sensor_msgs/MultiEchoLaserScan data

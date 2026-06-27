@@ -37,7 +37,11 @@ gpio_node:
 
 sonar_node:
   ros__parameters:
-    # Define speed of sound in pure water (m/s)
+    # Speed of sound in fresh water at ~20 °C (m/s).  Saltwater ≈ 1520.
     speed_of_sound: 1481
+    # Serial port for the Ping360 (update per platform: ttyUSB0 desktop, ttyTHS1 Jetson)
+    port: "/dev/ttyUSB0"
+    # Ping360 default baud rate
+    baudrate: 115200
 
     

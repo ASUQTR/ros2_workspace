@@ -16,6 +16,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ThrusterCommand.msg"
   "msg/LedCommand.msg"
   "action/Control.action"
+  "srv/GetSonarPosition.srv"
   "srv/SonarScan.srv"
   DEPENDENCIES std_msgs geometry_msgs sensor_msgs
 )
