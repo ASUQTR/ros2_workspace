@@ -16,6 +16,7 @@ control_node:
     #  Higher R = "Save battery, thrust is expensive." This lowers overall output force.
     thruster_cost_matrix: [15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0]
     lqr_profile: "standstill"
+    lqr_profile_transition_sec: 1.0
     lqr_profiles:
       standstill_q: [1052.4762, 578.7808, 670.0731, 3134.6757, 3959.9523, 2453.9726, 265.1124, 303.5306, 204.2912, 12.3207, 19.8116, 12.2442]
       standstill_r: [15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0]

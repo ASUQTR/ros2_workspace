@@ -11,6 +11,8 @@ playback_node:
     waypoint_timeout_sec: 8.0
     min_waypoint_hold_sec: 0.2
     target_republish_period_sec: 0.2
+    lookahead_distance_m: 0.35
+    path_completion_tolerance_m: 0.25
     odometry_timeout_sec: 0.75
     magnetic_play_enabled: true
     require_kill_switch_armed: true

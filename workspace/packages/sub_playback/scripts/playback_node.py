@@ -58,6 +58,12 @@ class PlaybackNode(Node):
         self.target_republish_period = float(
             self.declare_parameter('target_republish_period_sec', 0.2).value
         )
+        self.lookahead_distance = float(
+            self.declare_parameter('lookahead_distance_m', 0.35).value
+        )
+        self.path_completion_tolerance = float(
+            self.declare_parameter('path_completion_tolerance_m', 0.25).value
+        )
         self.odometry_timeout = float(
             self.declare_parameter('odometry_timeout_sec', 0.75).value
         )
@@ -87,6 +93,10 @@ class PlaybackNode(Node):
         self.last_target_publish_at = None
         self.playback_index = 0
         self.resolved_target = None
+        self.playback_targets = []
+        self.playback_path_distances = []
+        self.last_path_progress_station = 0.0
+        self.last_path_progress_at = None
         self.reference_mode = 'body'
         self.progression_mode = 'setpoint'
         self.control_stopped = True
@@ -159,6 +169,8 @@ class PlaybackNode(Node):
                 'waypoint_timeout_sec',
                 'min_waypoint_hold_sec',
                 'target_republish_period_sec',
+                'lookahead_distance_m',
+                'path_completion_tolerance_m',
                 'odometry_timeout_sec'
             ):
                 if param.type_ != Parameter.Type.DOUBLE or float(param.value) <= 0.0:
@@ -189,6 +201,10 @@ class PlaybackNode(Node):
                 self.min_waypoint_hold = value
             elif name == 'target_republish_period_sec':
                 self.target_republish_period = value
+            elif name == 'lookahead_distance_m':
+                self.lookahead_distance = value
+            elif name == 'path_completion_tolerance_m':
+                self.path_completion_tolerance = value
             elif name == 'odometry_timeout_sec':
                 self.odometry_timeout = value
             elif name == 'magnetic_play_enabled':
@@ -451,6 +467,8 @@ class PlaybackNode(Node):
             return False, f'Invalid playback waypoint: {exc}'
 
         self.loaded_file_path = clean_path
+        self.playback_targets = []
+        self.playback_path_distances = []
         self.stop_playback('loaded')
         message = f'Loaded {len(self.loaded_waypoints)} waypoint(s) from {clean_path}'
         self.get_logger().info(message)
@@ -530,8 +548,12 @@ class PlaybackNode(Node):
             return False, 'Cannot start playback: odometry is unavailable or stale'
         if self.control_stopped:
             return False, 'Cannot start playback: press Start first'
+        self.playback_targets = self.build_playback_targets()
+        self.rebuild_playback_path_distances()
         self.playback_loop = bool(loop)
         self.playback_started_at = self.get_clock().now()
+        self.last_path_progress_station = 0.0
+        self.last_path_progress_at = self.playback_started_at
         self.playback_index = 0
         self.is_playing = True
         self.last_error = ''
@@ -549,6 +571,10 @@ class PlaybackNode(Node):
         self.active_waypoint_started_at = None
         self.last_target_publish_at = None
         self.resolved_target = None
+        self.playback_targets = []
+        self.playback_path_distances = []
+        self.last_path_progress_station = 0.0
+        self.last_path_progress_at = None
         self.last_error = error
         self.last_timed_out = timed_out
         self.publish_status(state)
@@ -588,17 +614,20 @@ class PlaybackNode(Node):
     def setpoint_progression(self):
         now = self.get_clock().now()
         active_age = (now - self.active_waypoint_started_at).nanoseconds / 1e9
-        self.republish_active_target()
-        if active_age >= self.min_waypoint_hold and self.is_target_reached():
-            self.playback_index += 1
-            if self.playback_index >= len(self.loaded_waypoints):
-                self.complete_or_loop()
-            else:
-                self.activate_current_waypoint()
+        target, target_index, closest_station = self.resolve_lookahead_target()
+        self.update_path_progress(closest_station, now)
+        self.playback_index = target_index
+        self.resolved_target = target
+        self.publish_playback_target(
+            self.resolved_target, self.loaded_waypoints[self.playback_index]
+        )
+        self.last_target_publish_at = now
+        if active_age >= self.min_waypoint_hold and self.is_path_completed():
+            self.complete_or_loop()
             return
-        if active_age >= self.waypoint_timeout:
+        if self.path_progress_timed_out(now):
             error = (
-                f'Waypoint {self.playback_index} timed out after '
+                f'Path progress timed out near waypoint {self.playback_index} after '
                 f'{self.waypoint_timeout:.1f} s'
             )
             self.get_logger().error(error)
@@ -606,19 +635,177 @@ class PlaybackNode(Node):
 
     def activate_current_waypoint(self):
         waypoint = self.loaded_waypoints[self.playback_index]
-        self.resolved_target = self.resolve_target(waypoint)
+        self.resolved_target = self.resolve_target(waypoint, self.playback_index)
         now = self.get_clock().now()
         self.active_waypoint_started_at = now
         self.last_target_publish_at = now
         self.publish_playback_target(self.resolved_target, waypoint)
         self.publish_status('playing')
 
-    def resolve_target(self, waypoint):
+    def build_playback_targets(self):
         if self.reference_mode == 'world':
+            return [
+                {
+                    'position': waypoint['world_position'],
+                    'orientation': waypoint['world_orientation']
+                }
+                for waypoint in self.loaded_waypoints
+            ]
+
+        pose = self.current_odometry.pose.pose
+        _, _, target_yaw = self.quaternion_to_euler(pose.orientation)
+        target_x = float(pose.position.x)
+        target_y = float(pose.position.y)
+        targets = []
+        for waypoint in self.loaded_waypoints:
+            forward = waypoint['body_forward']
+            right = waypoint['body_right']
+            target_x = (
+                target_x
+                + math.cos(target_yaw) * forward
+                + math.sin(target_yaw) * right
+            )
+            target_y = (
+                target_y
+                + math.sin(target_yaw) * forward
+                - math.cos(target_yaw) * right
+            )
+            target_yaw = self.wrap_angle(target_yaw + waypoint['body_yaw'])
+            targets.append({
+                'position': [target_x, target_y, -waypoint['depth_target']],
+                'orientation': self.euler_to_quaternion(0.0, 0.0, target_yaw)
+            })
+
+        return targets
+
+    def rebuild_playback_path_distances(self):
+        distances = []
+        total = 0.0
+        previous = None
+        for target in self.playback_targets:
+            position = target['position']
+            if previous is not None:
+                total += math.hypot(
+                    position[0] - previous[0],
+                    position[1] - previous[1]
+                )
+            distances.append(total)
+            previous = position
+        self.playback_path_distances = distances
+
+    def resolve_lookahead_target(self):
+        if not self.playback_targets:
+            return self.resolve_target(
+                self.loaded_waypoints[self.playback_index], self.playback_index
+            ), self.playback_index, 0.0
+        if len(self.playback_targets) == 1:
+            return self.playback_targets[0], 0, 0.0
+
+        pose = self.current_odometry.pose.pose
+        closest_station, _ = self.project_position_on_path(
+            pose.position.x, pose.position.y
+        )
+        target_station = min(
+            closest_station + self.lookahead_distance,
+            self.playback_path_distances[-1]
+        )
+        target, target_index = self.interpolate_path_target(target_station)
+        return target, target_index, closest_station
+
+    def update_path_progress(self, closest_station, now):
+        if self.last_path_progress_at is None:
+            self.last_path_progress_at = now
+            self.last_path_progress_station = closest_station
+            return
+        if closest_station > self.last_path_progress_station + 0.05:
+            self.last_path_progress_station = closest_station
+            self.last_path_progress_at = now
+
+    def path_progress_timed_out(self, now):
+        if self.last_path_progress_at is None:
+            return False
+        if self.is_path_completed():
+            return False
+        age = (now - self.last_path_progress_at).nanoseconds / 1e9
+        return age >= self.waypoint_timeout
+
+    def project_position_on_path(self, x, y):
+        best_station = 0.0
+        best_index = 0
+        best_distance_sq = math.inf
+        min_station = max(0.0, self.last_path_progress_station - max(
+            self.path_completion_tolerance,
+            0.25
+        ))
+        max_station = min(
+            self.playback_path_distances[-1],
+            self.last_path_progress_station + max(self.lookahead_distance * 4.0, 1.0)
+        )
+        for index in range(len(self.playback_targets) - 1):
+            start_station = self.playback_path_distances[index]
+            end_station = self.playback_path_distances[index + 1]
+            if end_station < min_station or start_station > max_station:
+                continue
+            start = self.playback_targets[index]['position']
+            end = self.playback_targets[index + 1]['position']
+            dx = end[0] - start[0]
+            dy = end[1] - start[1]
+            length_sq = dx * dx + dy * dy
+            if length_sq <= 1e-9:
+                t = 0.0
+                projection_x = start[0]
+                projection_y = start[1]
+            else:
+                t = ((x - start[0]) * dx + (y - start[1]) * dy) / length_sq
+                t = max(0.0, min(1.0, t))
+                projection_x = start[0] + t * dx
+                projection_y = start[1] + t * dy
+            distance_sq = (x - projection_x) ** 2 + (y - projection_y) ** 2
+            if distance_sq < best_distance_sq:
+                segment_length = math.sqrt(length_sq)
+                best_distance_sq = distance_sq
+                best_station = start_station + t * segment_length
+                best_index = index
+        if best_distance_sq == math.inf:
+            return self.last_path_progress_station, self.playback_index
+        return best_station, best_index
+
+    def interpolate_path_target(self, station):
+        if station <= 0.0:
+            return self.playback_targets[0], 0
+
+        final_index = len(self.playback_targets) - 1
+        if station >= self.playback_path_distances[-1]:
+            return self.playback_targets[final_index], final_index
+
+        for index in range(final_index):
+            start_station = self.playback_path_distances[index]
+            end_station = self.playback_path_distances[index + 1]
+            if station > end_station:
+                continue
+
+            start = self.playback_targets[index]['position']
+            end = self.playback_targets[index + 1]['position']
+            segment_length = end_station - start_station
+            if segment_length <= 1e-9:
+                continue
+            t = (station - start_station) / segment_length
+            position = [
+                start[0] + (end[0] - start[0]) * t,
+                start[1] + (end[1] - start[1]) * t,
+                start[2] + (end[2] - start[2]) * t
+            ]
+            yaw = math.atan2(end[1] - start[1], end[0] - start[0])
             return {
-                'position': waypoint['world_position'],
-                'orientation': waypoint['world_orientation']
-            }
+                'position': position,
+                'orientation': self.euler_to_quaternion(0.0, 0.0, yaw)
+            }, index + 1
+
+        return self.playback_targets[final_index], final_index
+
+    def resolve_target(self, waypoint, index):
+        if 0 <= index < len(self.playback_targets):
+            return self.playback_targets[index]
         pose = self.current_odometry.pose.pose
         _, _, current_yaw = self.quaternion_to_euler(pose.orientation)
         forward = waypoint['body_forward']
@@ -692,8 +879,33 @@ class PlaybackNode(Node):
             and angle_error <= self.angle_tolerance
         )
 
+    def is_path_completed(self):
+        if not self.playback_targets:
+            return False
+        if (
+            self.last_path_progress_station
+            < self.playback_path_distances[-1] - self.path_completion_tolerance
+        ):
+            return False
+        pose = self.current_odometry.pose.pose
+        final_target = self.playback_targets[-1]
+        final_position = final_target['position']
+        horizontal_error = math.hypot(
+            final_position[0] - pose.position.x,
+            final_position[1] - pose.position.y
+        )
+        depth_error = abs(final_position[2] - pose.position.z)
+        return (
+            horizontal_error <= self.path_completion_tolerance
+            and depth_error <= self.depth_tolerance
+        )
+
     def complete_or_loop(self):
         if self.playback_loop:
+            self.playback_targets = self.build_playback_targets()
+            self.rebuild_playback_path_distances()
+            self.last_path_progress_station = 0.0
+            self.last_path_progress_at = self.get_clock().now()
             self.playback_index = 0
             self.playback_started_at = self.get_clock().now()
             self.activate_current_waypoint()

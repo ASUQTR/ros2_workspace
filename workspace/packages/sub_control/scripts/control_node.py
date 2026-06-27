@@ -37,7 +37,7 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Joy
 from std_msgs.msg import Float64MultiArray
 from std_msgs.msg import Bool
-from sub_interfaces.msg import ControlTarget, ThrusterCommand
+from sub_interfaces.msg import ControlTarget, PlaybackStatus, ThrusterCommand
 from sub_interfaces.action import Control
 import tf2_ros
 
@@ -55,6 +55,7 @@ DEFAULT_DAMPING_SIGN = -1.0
 DEFAULT_MAX_THRUSTER_FORCE = 14.4
 DEFAULT_MAX_THROTTLE = 0.8
 DEFAULT_JOY_DEAD_ZONE = 0.1
+DEFAULT_LQR_PROFILE_TRANSITION_SEC = 1.0
 DEFAULT_MANUAL_ASSISTED_DEPTH = 0.5
 DEFAULT_MANUAL_ASSISTED_MIN_DEPTH = 0.2
 DEFAULT_MANUAL_ASSISTED_MAX_DEPTH = 3.0
@@ -116,6 +117,7 @@ class ControlNode(Node):
         self.declare_parameter('state_cost_matrix', DEFAULT_Q)
         self.declare_parameter('thruster_cost_matrix', DEFAULT_R)
         self.declare_parameter('lqr_profile', 'standstill')
+        self.declare_parameter('lqr_profile_transition_sec', DEFAULT_LQR_PROFILE_TRANSITION_SEC)
         self.declare_parameter('lqr_profiles.standstill_q', DEFAULT_Q)
         self.declare_parameter('lqr_profiles.standstill_r', DEFAULT_R)
         self.declare_parameter('lqr_profiles.forward_q', DEFAULT_Q)
@@ -174,11 +176,16 @@ class ControlNode(Node):
         self.manual_assisted_last_update_time = None
         self.manual_assisted_last_gamepad_time = None
         self.manual_assisted_last_playback_time = None
+        self.manual_assisted_playback_active = False
         self.last_depth_up_button_state = False
         self.last_depth_down_button_state = False
         self.last_hold_button_state = False
         self.software_kill_active = False
         self._last_mode_for_transition = None
+        self.q_values = np.array(DEFAULT_Q, dtype=np.float64)
+        self.r_values = np.array(DEFAULT_R, dtype=np.float64)
+        self.lqr_profile_transition_sec = DEFAULT_LQR_PROFILE_TRANSITION_SEC
+        self.lqr_profile_transition = None
 
         # Load initial parameters
         mode_str = self.get_parameter('control_mode').value.lower()
@@ -186,6 +193,7 @@ class ControlNode(Node):
         self.update_q_matrix(self.get_parameter('state_cost_matrix').value)
         self.update_r_matrix(self.get_parameter('thruster_cost_matrix').value)
         self.lqr_profile = str(self.get_parameter('lqr_profile').value)
+        self.lqr_profile_transition_sec = float(self.get_parameter('lqr_profile_transition_sec').value)
         self.publish_lqr_debug_angles = bool(self.get_parameter('publish_lqr_debug_angles').value)
         self.publish_lqr_dynamics_debug = bool(self.get_parameter('publish_lqr_dynamics_debug').value)
         self.debug_invert_roll = bool(self.get_parameter('debug_invert_roll').value)
@@ -282,6 +290,10 @@ class ControlNode(Node):
              ControlTarget, 'control/playback_target', self.playback_target_callback, only_latest_qos,
              callback_group=self.action_cb_group
         )
+        self.playback_status_sub = self.create_subscription(
+             PlaybackStatus, 'playback/status', self.playback_status_callback, latched_qos,
+             callback_group=self.action_cb_group
+        )
         
         self.thruster_pub = self.create_publisher(
             ThrusterCommand, 'thruster_cmd', only_latest_qos
@@ -372,6 +384,7 @@ class ControlNode(Node):
             matrix_error = self._validate_cost_matrices(q_values, r_values)
             if matrix_error:
                 return SetParametersResult(successful=False, reason=matrix_error)
+            self.lqr_profile_transition = None
             self.update_q_matrix(q_values)
             self.update_r_matrix(r_values)
 
@@ -386,6 +399,13 @@ class ControlNode(Node):
                 result = self._set_lqr_profile(str(param.value))
                 if not result.successful:
                     return result
+            elif param.name == 'lqr_profile_transition_sec':
+                if param.type_ != Parameter.Type.DOUBLE:
+                    return SetParametersResult(
+                        successful=False,
+                        reason='lqr_profile_transition_sec must be a float (double)'
+                    )
+                self.lqr_profile_transition_sec = max(0.0, float(param.value))
             elif param.name == 'publish_lqr_debug_angles':
                 self.publish_lqr_debug_angles = bool(param.value)
             elif param.name == 'publish_lqr_dynamics_debug':
@@ -488,6 +508,17 @@ class ControlNode(Node):
                 result = self._validate_lqr_profile(str(param.value))
                 if not result.successful:
                     return result
+            elif param.name == 'lqr_profile_transition_sec':
+                if param.type_ != Parameter.Type.DOUBLE:
+                    return SetParametersResult(
+                        successful=False,
+                        reason='lqr_profile_transition_sec must be a float (double)'
+                    )
+                if float(param.value) < 0.0:
+                    return SetParametersResult(
+                        successful=False,
+                        reason='lqr_profile_transition_sec must be >= 0.0'
+                    )
             elif param.name in (
                 'publish_lqr_debug_angles',
                 'publish_lqr_dynamics_debug',
@@ -551,36 +582,67 @@ class ControlNode(Node):
         normalized = profile_name.strip().lower()
         q_values = list(self.get_parameter(f'lqr_profiles.{normalized}_q').value)
         r_values = list(self.get_parameter(f'lqr_profiles.{normalized}_r').value)
-        self.update_q_matrix(q_values)
-        self.update_r_matrix(r_values)
+        self._start_lqr_profile_transition(q_values, r_values, normalized)
         self.lqr_profile = normalized
-        self.get_logger().warn(f'LQR profile changed to {normalized}')
+        self.get_logger().warn(
+            f'LQR profile target changed to {normalized} '
+            f'over {self.lqr_profile_transition_sec:.2f} s'
+        )
         return SetParametersResult(successful=True)
 
     def _validate_lqr_profile(self, profile_name):
         normalized = profile_name.strip().lower()
         if normalized not in ('standstill', 'forward', 'turning'):
             return SetParametersResult(successful=False, reason='Unknown LQR profile')
-        if not self.software_kill_active:
-            return SetParametersResult(
-                successful=False,
-                reason='Stop MANUAL_ASSISTED before changing LQR profile'
-            )
-        if normalized != 'standstill':
-            tuned = bool(self.get_parameter(
-                f'lqr_profiles.{normalized}_tuned'
-            ).value)
-            if not tuned:
-                return SetParametersResult(
-                    successful=False,
-                    reason=f'LQR profile {normalized} is not tuned yet'
-                )
         q_values = list(self.get_parameter(f'lqr_profiles.{normalized}_q').value)
         r_values = list(self.get_parameter(f'lqr_profiles.{normalized}_r').value)
         error = self._validate_cost_matrices(q_values, r_values)
         if error:
             return SetParametersResult(successful=False, reason=error)
         return SetParametersResult(successful=True)
+
+    def _start_lqr_profile_transition(self, q_target, r_target, profile_name):
+        q_target = np.array(q_target, dtype=np.float64)
+        r_target = np.array(r_target, dtype=np.float64)
+        duration = float(self.lqr_profile_transition_sec)
+        if duration <= 1e-6:
+            self.lqr_profile_transition = None
+            self.update_q_matrix(q_target.tolist())
+            self.update_r_matrix(r_target.tolist())
+            return
+
+        self.lqr_profile_transition = {
+            'profile': profile_name,
+            'start_time': time.monotonic(),
+            'duration': duration,
+            'q_start': self.q_values.copy(),
+            'r_start': self.r_values.copy(),
+            'q_target': q_target,
+            'r_target': r_target,
+        }
+
+    def _update_lqr_profile_transition(self):
+        transition = self.lqr_profile_transition
+        if transition is None:
+            return
+        duration = max(transition['duration'], 1e-6)
+        alpha = (time.monotonic() - transition['start_time']) / duration
+        alpha = max(0.0, min(1.0, alpha))
+        q_values = (
+            (1.0 - alpha) * transition['q_start']
+            + alpha * transition['q_target']
+        )
+        r_values = (
+            (1.0 - alpha) * transition['r_start']
+            + alpha * transition['r_target']
+        )
+        self.update_q_matrix(q_values.tolist())
+        self.update_r_matrix(r_values.tolist())
+        if alpha >= 1.0:
+            self.lqr_profile_transition = None
+            self.get_logger().info(
+                f"LQR profile transition complete: {transition['profile']}"
+            )
         
     def _set_mode_from_string(self, mode_str):
         """
@@ -628,7 +690,8 @@ class ControlNode(Node):
         """
         try:
             if isinstance(q_list, (list, tuple)) and len(q_list) == 12:
-                self.q_matrix = np.diag(q_list).astype(np.float64)
+                self.q_values = np.array(q_list, dtype=np.float64)
+                self.q_matrix = np.diag(self.q_values).astype(np.float64)
                 return SetParametersResult(successful=True)
             else:
                 raise ValueError("Q matrix parameter must be a list of 12 elements")
@@ -648,7 +711,8 @@ class ControlNode(Node):
         """
         try:
             if isinstance(r_list, (list, tuple)) and len(r_list) == 8:
-                self.r_matrix = np.diag(r_list).astype(np.float64)
+                self.r_values = np.array(r_list, dtype=np.float64)
+                self.r_matrix = np.diag(self.r_values).astype(np.float64)
                 # Math optimization: K = R^-1 * B^T * X. We pre-compute R^-1 here so we 
                 # don't waste CPU cycles inverting the matrix during the hot control loop.
                 self.inv_r_matrix = np.linalg.inv(self.r_matrix)
@@ -768,6 +832,7 @@ class ControlNode(Node):
         
         # --- Execute Control ---
         if self._current_mode in [ControlMode.BEHAVIOR, ControlMode.LQR_TUNING, ControlMode.MANUAL_ASSISTED]:
+            self._update_lqr_profile_transition()
             
             # LQR convention: x_error = current - target, then u = -K * x_error.
             # Using target - current here flips the feedback sign and drives the
@@ -925,7 +990,21 @@ class ControlNode(Node):
             self.manual_assisted_yaw_target = self.target_state[5]
             self.manual_assisted_last_playback_time = self._now_seconds()
 
+    def playback_status_callback(self, msg):
+        """Give playback exclusive ownership of the assisted target while playing."""
+        was_active = self.manual_assisted_playback_active
+        self.manual_assisted_playback_active = msg.state == 'playing'
+        if was_active and not self.manual_assisted_playback_active:
+            self.manual_assisted_last_playback_time = None
+            self.manual_assisted_carrot_body[:] = 0.0
+            self.manual_assisted_last_update_time = self._now_seconds()
+            self.get_logger().info(
+                f"Playback target released after state '{msg.state}'."
+            )
+
     def _has_recent_playback_target(self):
+        if self.manual_assisted_playback_active:
+            return True
         last = self.manual_assisted_last_playback_time
         if last is None:
             return False
@@ -966,6 +1045,8 @@ class ControlNode(Node):
 
         if self._current_mode == ControlMode.MANUAL_ASSISTED:
             if self.software_kill_active:
+                return
+            if self._has_recent_playback_target():
                 return
             self._manual_assisted_gamepad_update(
                 forward_cmd=left_stick_y,

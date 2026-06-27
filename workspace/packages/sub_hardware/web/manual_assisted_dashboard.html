@@ -357,6 +357,105 @@
       text-overflow: ellipsis;
     }
 
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(150px, 1fr));
+      gap: 8px;
+    }
+
+    .telemetry-value {
+      margin-top: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 15px;
+      font-weight: 720;
+      white-space: nowrap;
+    }
+
+    .topic-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .topic-table th,
+    .topic-table td {
+      padding: 9px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+    }
+
+    .topic-table th {
+      color: var(--quiet);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .topic-table td:last-child,
+    .topic-table th:last-child {
+      text-align: right;
+    }
+
+    .thruster-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      gap: 8px;
+    }
+
+    .thruster-value {
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 16px;
+      font-weight: 750;
+    }
+
+    .event-log {
+      display: grid;
+      gap: 6px;
+      max-height: 280px;
+      margin: 0;
+      padding: 0;
+      overflow-y: auto;
+      list-style: none;
+    }
+
+    .event-item {
+      display: grid;
+      grid-template-columns: 62px minmax(0, 1fr);
+      gap: 8px;
+      padding: 7px 8px;
+      border-left: 3px solid var(--line);
+      background: #0f1317;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .event-item.info {
+      border-left-color: var(--blue);
+    }
+
+    .event-item.ok {
+      border-left-color: var(--green);
+    }
+
+    .event-item.warn {
+      border-left-color: var(--amber);
+    }
+
+    .event-item.error {
+      border-left-color: var(--red);
+    }
+
+    .event-time {
+      color: var(--quiet);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .event-source {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
     .camera-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(260px, 1fr));
@@ -687,7 +786,9 @@
       .button-row,
       .button-row.three,
       .readout-grid,
-      .matrix-grid {
+      .matrix-grid,
+      .telemetry-grid,
+      .thruster-grid {
         grid-template-columns: 1fr;
       }
 
@@ -715,12 +816,26 @@
       <button class="active" type="button" data-tab-button="pilotage">Pilotage</button>
       <button type="button" data-tab-button="connection">Connexion</button>
       <button type="button" data-tab-button="control">Controle</button>
+      <button type="button" data-tab-button="debug">Debug</button>
     </nav>
     <aside class="sidebar">
       <div class="brand">
         <h1>ASUQTR Pilot Dashboard</h1>
         <div class="sub">Manual assisted / ROSBridge</div>
       </div>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Événements ROS</h2>
+            <p class="panel-kicker" id="eventCount">0 événement</p>
+          </div>
+          <button id="clearEventsBtn" class="ghost" type="button">Vider</button>
+        </div>
+        <div class="panel-body">
+          <ol id="eventLog" class="event-log" aria-live="polite"></ol>
+        </div>
+      </section>
 
       <section class="panel tab-hidden" data-dashboard-tab="connection">
         <div class="panel-header">
@@ -835,6 +950,36 @@
           <div class="tiny">Start arme MANUAL_ASSISTED. Select active l'arret logiciel. Record sauvegarde les targets carotte. Load/Play utilise un JSON disponible sur la machine ROS.</div>
         </div>
       </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="debug">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Sécurité</h2>
+            <p class="panel-kicker">État reçu du sous-marin</p>
+          </div>
+        </div>
+        <div class="panel-body field-grid">
+          <div class="status-grid">
+            <div class="status-card">
+              <div class="status-label">PWM</div>
+              <div class="status-value"><span id="debugPwmDot" class="dot warn"></span><span id="debugPwmState">Inconnu</span></div>
+            </div>
+            <div class="status-card">
+              <div class="status-label">Mag 1</div>
+              <div class="status-value"><span id="debugKillDot" class="dot warn"></span><span id="debugKillState">Inconnue</span></div>
+            </div>
+            <div class="status-card">
+              <div class="status-label">Mag 2</div>
+              <div class="status-value"><span id="debugMag2Dot" class="dot warn"></span><span id="debugMag2State">Inconnue</span></div>
+            </div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Playback</div>
+            <div id="debugPlaybackState" class="metric-value">Aucun statut</div>
+            <div id="debugPlaybackDetail" class="tiny" style="margin-top: 6px;">-</div>
+          </div>
+        </div>
+      </section>
     </aside>
 
     <section class="main">
@@ -922,11 +1067,77 @@
         </div>
       </section>
 
-      <section class="panel tab-hidden" data-dashboard-tab="connection">
+      <section class="panel tab-hidden" data-dashboard-tab="debug">
         <div class="panel-header">
           <div>
-            <h2 class="panel-title">Debug</h2>
-            <p class="panel-kicker">manual_assisted + Joy</p>
+            <h2 class="panel-title">Santé des topics</h2>
+            <p class="panel-kicker">Fréquence calculée dans ce navigateur</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <table class="topic-table">
+            <thead><tr><th>Topic</th><th>État</th><th>Fréquence</th><th>Âge</th></tr></thead>
+            <tbody>
+              <tr><td>/odometry/filtered</td><td id="odomHealth">Attente</td><td id="odomRate">0 Hz</td><td id="odomAge">-</td></tr>
+              <tr><td>/control/target</td><td id="controlTargetHealth">Attente</td><td id="controlTargetRate">0 Hz</td><td id="controlTargetAge">-</td></tr>
+              <tr><td>/control/playback_target</td><td id="playbackTargetHealth">Attente</td><td id="playbackTargetRate">0 Hz</td><td id="playbackTargetAge">-</td></tr>
+              <tr><td>/thruster_cmd</td><td id="thrusterHealth">Attente</td><td id="thrusterRate">0 Hz</td><td id="thrusterAge">-</td></tr>
+              <tr><td>/playback/status</td><td id="playbackHealth">Attente</td><td id="playbackRate">0 Hz</td><td id="playbackAge">-</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="debug">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Odométrie EKF</h2>
+            <p class="panel-kicker">/odometry/filtered</p>
+          </div>
+        </div>
+        <div class="panel-body telemetry-grid">
+          <div class="metric"><div class="metric-label">Position ENU</div><div id="debugPosition" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Roll / Pitch / Yaw</div><div id="debugOrientation" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Vitesse linéaire</div><div id="debugLinearVelocity" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Vitesse angulaire</div><div id="debugAngularVelocity" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Profondeur NED</div><div id="debugDepth" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Frame</div><div id="debugOdomFrame" class="telemetry-value">-</div></div>
+        </div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="debug">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Cible active et erreur</h2>
+            <p class="panel-kicker">/control/target ou /control/playback_target</p>
+          </div>
+        </div>
+        <div class="panel-body telemetry-grid">
+          <div class="metric"><div class="metric-label">Source</div><div id="debugTargetSource" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Position cible</div><div id="debugTargetPosition" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Orientation cible</div><div id="debugTargetOrientation" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Erreur horizontale</div><div id="debugHorizontalError" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Erreur profondeur</div><div id="debugDepthError" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Erreur yaw</div><div id="debugYawError" class="telemetry-value">-</div></div>
+        </div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="debug">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Commandes thrusters</h2>
+            <p class="panel-kicker">/thruster_cmd, efforts en N</p>
+          </div>
+          <div id="debugThrusterMax" class="tiny">Max: -</div>
+        </div>
+        <div id="debugThrusterGrid" class="panel-body thruster-grid"></div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="debug">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Données brutes</h2>
+            <p class="panel-kicker">Derniers messages reçus</p>
           </div>
           <button id="clearDebugBtn" class="ghost" type="button">Vider</button>
         </div>
@@ -975,10 +1186,16 @@
             <div class="metric-label">Profil LQR</div>
             <div class="segmented three" style="margin-top: 8px;">
               <button id="profileStandstillBtn" class="active" type="button">Standstill</button>
-              <button id="profileForwardBtn" type="button" disabled>Forward - non ajuste</button>
-              <button id="profileTurningBtn" type="button" disabled>Forward + Turning - non ajuste</button>
+              <button id="profileForwardBtn" type="button">Forward</button>
+              <button id="profileTurningBtn" type="button">Forward + Turning</button>
             </div>
-            <div id="profileStatus" class="tiny" style="margin-top: 8px;">Changement permis seulement en STOP.</div>
+            <div class="matrix-grid" style="margin-top: 8px;">
+              <div class="field">
+                <label for="profileTransitionSec">Transition Q/R (s)</label>
+                <input id="profileTransitionSec" type="number" min="0" step="0.1" value="1.0">
+              </div>
+            </div>
+            <div id="profileStatus" class="tiny" style="margin-top: 8px;">Changement lisse permis en temps reel.</div>
           </div>
 
           <div class="metric">
@@ -1002,6 +1219,15 @@
     const joyTopic = "/dashboard/gamepad";
     const debugTopic = "/debug/manual_assisted";
     const playbackStatusTopic = "/playback/status";
+    const rosoutTopic = "/rosout";
+    const telemetryTopics = {
+      odometry: "/odometry/filtered",
+      controlTarget: "/control/target",
+      playbackTarget: "/control/playback_target",
+      thrusters: "/thruster_cmd",
+      killSwitch: "/kill_switch",
+      magneticSwitch2: "/magnetic_switch_2"
+    };
     const unityCameraTopics = {
       front: "/unity/camera/front/compressed",
       bottom: "/unity/camera/bottom/compressed"
@@ -1026,18 +1252,36 @@
     let playbackProgressionMode = "setpoint";
     let playbackActive = false;
     let controlStopped = true;
+    let disablePwmReceived = false;
+    let killSwitchArmed = null;
+    let magneticSwitch2Active = null;
+    let latestPlaybackStatus = null;
+    let previousPlaybackState = "";
+    let eventSequence = 0;
+    let lastRosoutSignature = "";
+    let lastRosoutAt = 0;
     let depthParameterRequestsPending = 0;
     let depthParameterQueue = [];
     let physicalCamerasAvailable = false;
     let physicalCameraBase = "";
     const lastUnityFrameAt = { 1: 0, 2: 0 };
     const cameraSource = { 1: "offline", 2: "offline" };
+    const telemetry = {
+      odometry: { lastAt: 0, count: 0, rate: 0, message: null, staleMs: 750, healthState: "waiting" },
+      controlTarget: { lastAt: 0, count: 0, rate: 0, message: null, staleMs: 1500, healthState: "waiting" },
+      playbackTarget: { lastAt: 0, count: 0, rate: 0, message: null, staleMs: 1500, healthState: "waiting" },
+      thrusters: { lastAt: 0, count: 0, rate: 0, message: null, staleMs: 1500, healthState: "waiting" },
+      playback: { lastAt: 0, count: 0, rate: 0, message: null, staleMs: Infinity, healthState: "waiting" }
+    };
 
     const el = {
       jetsonIp: document.getElementById("jetsonIp"),
       rosbridgeUrl: document.getElementById("rosbridgeUrl"),
       cameraUrl: document.getElementById("cameraUrl"),
       hostHint: document.getElementById("hostHint"),
+      eventLog: document.getElementById("eventLog"),
+      eventCount: document.getElementById("eventCount"),
+      clearEventsBtn: document.getElementById("clearEventsBtn"),
       rosDot: document.getElementById("rosDot"),
       gamepadDot: document.getElementById("gamepadDot"),
       pubDot: document.getElementById("pubDot"),
@@ -1071,8 +1315,31 @@
       profileStandstillBtn: document.getElementById("profileStandstillBtn"),
       profileForwardBtn: document.getElementById("profileForwardBtn"),
       profileTurningBtn: document.getElementById("profileTurningBtn"),
+      profileTransitionSec: document.getElementById("profileTransitionSec"),
       profileStatus: document.getElementById("profileStatus"),
       controlSettingsStatus: document.getElementById("controlSettingsStatus"),
+      debugPwmDot: document.getElementById("debugPwmDot"),
+      debugPwmState: document.getElementById("debugPwmState"),
+      debugKillDot: document.getElementById("debugKillDot"),
+      debugKillState: document.getElementById("debugKillState"),
+      debugMag2Dot: document.getElementById("debugMag2Dot"),
+      debugMag2State: document.getElementById("debugMag2State"),
+      debugPlaybackState: document.getElementById("debugPlaybackState"),
+      debugPlaybackDetail: document.getElementById("debugPlaybackDetail"),
+      debugPosition: document.getElementById("debugPosition"),
+      debugOrientation: document.getElementById("debugOrientation"),
+      debugLinearVelocity: document.getElementById("debugLinearVelocity"),
+      debugAngularVelocity: document.getElementById("debugAngularVelocity"),
+      debugDepth: document.getElementById("debugDepth"),
+      debugOdomFrame: document.getElementById("debugOdomFrame"),
+      debugTargetSource: document.getElementById("debugTargetSource"),
+      debugTargetPosition: document.getElementById("debugTargetPosition"),
+      debugTargetOrientation: document.getElementById("debugTargetOrientation"),
+      debugHorizontalError: document.getElementById("debugHorizontalError"),
+      debugDepthError: document.getElementById("debugDepthError"),
+      debugYawError: document.getElementById("debugYawError"),
+      debugThrusterGrid: document.getElementById("debugThrusterGrid"),
+      debugThrusterMax: document.getElementById("debugThrusterMax"),
       depthLimitsEnabled: document.getElementById("depthLimitsEnabled"),
       depthBaseTarget: document.getElementById("depthBaseTarget"),
       depthMinTarget: document.getElementById("depthMinTarget"),
@@ -1095,6 +1362,7 @@
     const rLabels = ["Thruster 1", "Thruster 2", "Thruster 3", "Thruster 4", "Thruster 5", "Thruster 6", "Thruster 7", "Thruster 8"];
     const qInputs = [];
     const rInputs = [];
+    const thrusterDebugValues = [];
 
     function buildMatrixFields(container, labels, inputs) {
       labels.forEach((label, index) => {
@@ -1115,6 +1383,20 @@
 
     buildMatrixFields(el.qMatrixFields, qLabels, qInputs);
     buildMatrixFields(el.rMatrixFields, rLabels, rInputs);
+
+    rLabels.forEach((label) => {
+      const metric = document.createElement("div");
+      metric.className = "metric";
+      const metricLabel = document.createElement("div");
+      metricLabel.className = "metric-label";
+      metricLabel.textContent = label;
+      const value = document.createElement("div");
+      value.className = "thruster-value";
+      value.textContent = "-";
+      metric.append(metricLabel, value);
+      el.debugThrusterGrid.appendChild(metric);
+      thrusterDebugValues.push(value);
+    });
 
     const axisEls = {
       leftX: { value: document.getElementById("leftXValue"), bar: document.getElementById("leftXBar") },
@@ -1213,46 +1495,109 @@
       return true;
     }
 
+    function addEvent(level, source, message) {
+      if (!el.eventLog || !message) return;
+      const item = document.createElement("li");
+      item.className = "event-item " + level;
+      item.dataset.sequence = String(++eventSequence);
+
+      const time = document.createElement("span");
+      time.className = "event-time";
+      time.textContent = new Date().toLocaleTimeString("fr-CA", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+      });
+
+      const content = document.createElement("span");
+      const sourceLabel = document.createElement("span");
+      sourceLabel.className = "event-source";
+      sourceLabel.textContent = source + " ";
+      content.append(sourceLabel, document.createTextNode(message));
+      item.append(time, content);
+      el.eventLog.appendChild(item);
+
+      while (el.eventLog.children.length > 120) {
+        el.eventLog.firstElementChild.remove();
+      }
+      el.eventCount.textContent = el.eventLog.children.length + " événement(s)";
+      el.eventLog.scrollTop = el.eventLog.scrollHeight;
+    }
+
+    function rosoutLevel(level) {
+      if (level >= 50) return "error";
+      if (level >= 30) return "warn";
+      return "info";
+    }
+
+    function handleRosout(msg) {
+      if (!msg || !msg.msg) return;
+      const source = String(msg.name || "rosout").replace(/^\//, "");
+      const monitored = [
+        "control_node",
+        "playback_node",
+        "gpio_node",
+        "actuator_node",
+        "rosbridge"
+      ].some((name) => source.includes(name));
+      if (!monitored && Number(msg.level || 0) < 30) return;
+
+      const signature = source + "|" + msg.level + "|" + msg.msg;
+      const now = Date.now();
+      if (signature === lastRosoutSignature && now - lastRosoutAt < 1000) return;
+      lastRosoutSignature = signature;
+      lastRosoutAt = now;
+      addEvent(rosoutLevel(Number(msg.level || 0)), source, String(msg.msg));
+    }
+
+    function subscribe(topic, type, options = {}) {
+      const subscribed = send({
+        op: "subscribe",
+        topic,
+        type,
+        queue_length: options.queueLength || 1,
+        ...(options.throttleRate ? { throttle_rate: options.throttleRate } : {})
+      });
+      if (subscribed && topic !== rosoutTopic) {
+        addEvent("info", "dashboard", "Subscription demandée: " + topic);
+      }
+    }
+
     function advertiseJoy() {
-      send({
+      const advertised = send({
         op: "advertise",
         topic: joyTopic,
         type: "sensor_msgs/msg/Joy"
       });
-      send({
-        op: "subscribe",
-        topic: debugTopic,
-        type: "std_msgs/msg/Float64MultiArray",
-        throttle_rate: 120
-      });
-      send({
-        op: "subscribe",
-        topic: unityCameraTopics.front,
-        type: "sensor_msgs/msg/CompressedImage",
-        queue_length: 1,
-        throttle_rate: 100
-      });
-      send({
-        op: "subscribe",
-        topic: playbackStatusTopic,
-        type: "sub_interfaces/msg/PlaybackStatus",
-        throttle_rate: 100
-      });
-      send({
-        op: "subscribe",
-        topic: "/disable_pwm",
-        type: "std_msgs/msg/Bool"
-      });
+      if (advertised) addEvent("ok", "dashboard", "Publisher prêt: " + joyTopic);
+      subscribe(debugTopic, "std_msgs/msg/Float64MultiArray", { throttleRate: 120 });
+      subscribe(
+        unityCameraTopics.front,
+        "sensor_msgs/msg/CompressedImage",
+        { throttleRate: 100 }
+      );
+      subscribe(
+        playbackStatusTopic,
+        "sub_interfaces/msg/PlaybackStatus",
+        { throttleRate: 100 }
+      );
+      subscribe("/disable_pwm", "std_msgs/msg/Bool");
+      subscribe(rosoutTopic, "rcl_interfaces/msg/Log");
+      subscribe(telemetryTopics.odometry, "nav_msgs/msg/Odometry");
+      subscribe(telemetryTopics.controlTarget, "sub_interfaces/msg/ControlTarget");
+      subscribe(telemetryTopics.playbackTarget, "sub_interfaces/msg/ControlTarget");
+      subscribe(telemetryTopics.thrusters, "sub_interfaces/msg/ThrusterCommand");
+      subscribe(telemetryTopics.killSwitch, "std_msgs/msg/Bool");
+      subscribe(telemetryTopics.magneticSwitch2, "std_msgs/msg/Bool");
       requestDepthParameters();
       requestPlaybackParameters();
       requestControlParameters();
-      send({
-        op: "subscribe",
-        topic: unityCameraTopics.bottom,
-        type: "sensor_msgs/msg/CompressedImage",
-        queue_length: 1,
-        throttle_rate: 100
-      });
+      subscribe(
+        unityCameraTopics.bottom,
+        "sensor_msgs/msg/CompressedImage",
+        { throttleRate: 100 }
+      );
     }
 
     function connect() {
@@ -1276,6 +1621,7 @@
       ws.onopen = () => {
         setDot(el.rosDot, "ok");
         el.rosText.textContent = "Connecte";
+        addEvent("ok", "rosbridge", "Connexion établie: " + rosUrl);
         advertiseJoy();
       };
       ws.onclose = () => {
@@ -1283,10 +1629,12 @@
         setDot(el.pubDot, "warn");
         el.rosText.textContent = "Hors ligne";
         el.pubText.textContent = "En attente";
+        addEvent("error", "rosbridge", "Connexion fermée");
       };
       ws.onerror = () => {
         setDot(el.rosDot, "bad");
         el.rosText.textContent = "Erreur";
+        addEvent("error", "rosbridge", "Erreur WebSocket");
       };
       ws.onmessage = (event) => {
         try {
@@ -1298,10 +1646,54 @@
           } else if (data.topic === unityCameraTopics.bottom) {
             displayUnityCameraFrame(2, data.msg);
           } else if (data.topic === playbackStatusTopic) {
+            markTelemetry("playback", data.msg);
             handlePlaybackStatus(data.msg);
           } else if (data.topic === "/disable_pwm") {
+            const previousStopped = controlStopped;
+            const hadState = disablePwmReceived;
+            disablePwmReceived = true;
             controlStopped = Boolean(data.msg && data.msg.data);
+            if (controlStopped && recordEnabled) {
+              recordEnabled = false;
+              recordRequestPending = false;
+              updateRecordButton();
+            }
+            if (!hadState || previousStopped !== controlStopped) {
+              addEvent(
+                controlStopped ? "error" : "ok",
+                "PWM",
+                controlStopped ? "PWM désactivés" : "PWM activés"
+              );
+            }
             updateControlLocks();
+          } else if (data.topic === telemetryTopics.killSwitch) {
+            const previousKillState = killSwitchArmed;
+            killSwitchArmed = Boolean(data.msg && data.msg.data);
+            if (previousKillState !== killSwitchArmed) {
+              addEvent(
+                killSwitchArmed ? "ok" : "error",
+                "Mag 1",
+                killSwitchArmed ? "Killswitch armée" : "Killswitch retirée"
+              );
+            }
+          } else if (data.topic === telemetryTopics.magneticSwitch2) {
+            const previousMag2State = magneticSwitch2Active;
+            magneticSwitch2Active = Boolean(data.msg && data.msg.data);
+            if (previousMag2State !== magneticSwitch2Active) {
+              addEvent(
+                magneticSwitch2Active ? "ok" : "info",
+                "Mag 2",
+                magneticSwitch2Active ? "Déclencheur activé" : "Déclencheur relâché"
+              );
+            }
+          } else if (data.topic === telemetryTopics.odometry) {
+            markTelemetry("odometry", data.msg);
+          } else if (data.topic === telemetryTopics.controlTarget) {
+            markTelemetry("controlTarget", data.msg);
+          } else if (data.topic === telemetryTopics.playbackTarget) {
+            markTelemetry("playbackTarget", data.msg);
+          } else if (data.topic === telemetryTopics.thrusters) {
+            markTelemetry("thrusters", data.msg);
           } else if (data.op === "service_response" && data.service === "/control_node/get_parameters") {
             if (String(data.id || "").startsWith("depth-")) handleDepthParameters(data);
             if (String(data.id || "").startsWith("control-settings-")) handleControlParameters(data);
@@ -1319,6 +1711,13 @@
             if (data.result === false || !data.values || !data.values.success) {
               recordEnabled = !recordEnabled;
               console.warn("Playback recording service rejected the request", data);
+              addEvent("error", "record", "Commande Record refusée");
+            } else {
+              addEvent(
+                recordEnabled ? "ok" : "info",
+                "record",
+                recordEnabled ? "Enregistrement démarré" : "Enregistrement sauvegardé"
+              );
             }
             updateRecordButton();
           } else if (data.op === "service_response" && data.service === "/playback_command") {
@@ -1332,8 +1731,21 @@
             }
             if (data.values && data.values.message) {
               console.info(data.values.message);
+              addEvent(
+                data.values.success ? "ok" : "error",
+                "playback",
+                String(data.values.message)
+              );
             }
             updatePlaybackButtons();
+          } else if (data.op === "status") {
+            addEvent(
+              data.level === "error" ? "error" : "info",
+              "rosbridge",
+              String(data.msg || data.id || "Statut reçu")
+            );
+          } else if (data.topic === rosoutTopic) {
+            handleRosout(data.msg);
           }
         } catch (error) {
           console.warn("Invalid rosbridge message", error);
@@ -1527,6 +1939,7 @@
             "state_cost_matrix",
             "thruster_cost_matrix",
             "lqr_profile",
+            "lqr_profile_transition_sec",
             "lqr_profiles.forward_tuned",
             "lqr_profiles.turning_tuned"
           ]
@@ -1536,14 +1949,13 @@
 
     function handleControlParameters(response) {
       const values = response.values && response.values.values;
-      if (!values || values.length < 5) return;
+      if (!values || values.length < 6) return;
       const qValues = values[0].double_array_value || [];
       const rValues = values[1].double_array_value || [];
       qInputs.forEach((input, index) => { input.value = Number(qValues[index] || 0).toFixed(4); });
       rInputs.forEach((input, index) => { input.value = Number(rValues[index] || 0).toFixed(4); });
       const profile = values[2].string_value || "standstill";
-      el.profileForwardBtn.disabled = !Boolean(values[3].bool_value);
-      el.profileTurningBtn.disabled = !Boolean(values[4].bool_value);
+      el.profileTransitionSec.value = Number(values[3].double_value || 0).toFixed(1);
       updateProfileButtons(profile);
       el.controlSettingsStatus.textContent = "Paramètres synchronisés";
     }
@@ -1581,18 +1993,20 @@
     }
 
     function selectProfile(profile) {
-      if (!controlStopped) {
-        el.profileStatus.textContent = "Appuie sur Select avant de changer de profil.";
-        return;
-      }
+      const transitionSec = Math.max(0, Number(el.profileTransitionSec.value || 0));
       send({
         op: "call_service",
         id: "profile-set-" + Date.now(),
         service: "/control_node/set_parameters",
         type: "rcl_interfaces/srv/SetParameters",
-        args: { parameters: [stringParameter("lqr_profile", profile)] }
+        args: {
+          parameters: [
+            doubleParameter("lqr_profile_transition_sec", transitionSec),
+            stringParameter("lqr_profile", profile)
+          ]
+        }
       });
-      el.profileStatus.textContent = "Application du profil...";
+      el.profileStatus.textContent = "Transition vers " + profile + "...";
     }
 
     function handleProfileResult(response) {
@@ -1898,15 +2312,247 @@
 
     function handlePlaybackStatus(msg) {
       if (!msg) return;
+      latestPlaybackStatus = msg;
       playbackReferenceMode = msg.reference_mode || playbackReferenceMode;
       playbackProgressionMode = msg.progression_mode || playbackProgressionMode;
       playbackActive = ["playing", "recording"].includes(msg.state);
+      if (!recordRequestPending) {
+        if (msg.state === "recording" && !recordEnabled) {
+          recordEnabled = true;
+          updateRecordButton();
+        } else if (recordEnabled && msg.state !== "recording") {
+          recordEnabled = false;
+          updateRecordButton();
+        }
+      }
       const current = Number(msg.current_index || 0);
       const total = Number(msg.waypoint_count || 0);
       playbackStatus = msg.state + (total ? " " + (current + 1) + "/" + total : "");
       if (msg.error) playbackStatus = msg.state + ": " + msg.error;
+      const state = String(msg.state || "");
+      if (state !== previousPlaybackState || msg.error) {
+        const level = (
+          state === "error"
+          || state === "timeout"
+          || Boolean(msg.error)
+        ) ? "error" : (
+          state === "playing" || state === "recording" || state === "completed"
+        ) ? "ok" : "info";
+        const detail = [
+          state || "statut",
+          total ? (current + 1) + "/" + total : "",
+          msg.reference_mode || "",
+          msg.progression_mode || "",
+          msg.error || ""
+        ].filter(Boolean).join(" | ");
+        addEvent(level, "playback", detail);
+        previousPlaybackState = state;
+      }
       updatePlaybackModeButtons();
       updatePlaybackButtons();
+    }
+
+    function markTelemetry(name, message) {
+      const item = telemetry[name];
+      if (!item) return;
+      if (item.healthState !== "active") {
+        addEvent("ok", "topic", name + " reçoit des messages");
+      }
+      item.healthState = "active";
+      item.lastAt = Date.now();
+      item.count += 1;
+      item.message = message;
+    }
+
+    function quaternionToEuler(orientation) {
+      if (!orientation) return { roll: 0, pitch: 0, yaw: 0 };
+      const x = Number(orientation.x || 0);
+      const y = Number(orientation.y || 0);
+      const z = Number(orientation.z || 0);
+      const w = Number(orientation.w || 1);
+      const sinRoll = 2 * (w * x + y * z);
+      const cosRoll = 1 - 2 * (x * x + y * y);
+      const sinPitch = clamp(2 * (w * y - z * x), -1, 1);
+      const sinYaw = 2 * (w * z + x * y);
+      const cosYaw = 1 - 2 * (y * y + z * z);
+      return {
+        roll: Math.atan2(sinRoll, cosRoll),
+        pitch: Math.asin(sinPitch),
+        yaw: Math.atan2(sinYaw, cosYaw)
+      };
+    }
+
+    function wrapAngle(angle) {
+      return Math.atan2(Math.sin(angle), Math.cos(angle));
+    }
+
+    function degrees(value) {
+      return value * 180 / Math.PI;
+    }
+
+    function fixed(value, digits = 2) {
+      const number = Number(value);
+      return Number.isFinite(number) ? number.toFixed(digits) : "-";
+    }
+
+    function vectorText(vector, digits = 2) {
+      if (!vector) return "-";
+      return [
+        fixed(vector.x, digits),
+        fixed(vector.y, digits),
+        fixed(vector.z, digits)
+      ].join(" / ");
+    }
+
+    function updateTopicRates() {
+      Object.values(telemetry).forEach((item) => {
+        item.rate = item.count;
+        item.count = 0;
+      });
+    }
+
+    function updateTopicRow(name, prefix) {
+      const item = telemetry[name];
+      const ageMs = item.lastAt ? Date.now() - item.lastAt : Infinity;
+      const health = document.getElementById(prefix + "Health");
+      const rate = document.getElementById(prefix + "Rate");
+      const age = document.getElementById(prefix + "Age");
+      if (!health || !rate || !age) return;
+      if (!item.lastAt) {
+        health.textContent = "Attente";
+        health.style.color = "var(--quiet)";
+      } else if (ageMs > item.staleMs) {
+        health.textContent = "Périmé";
+        health.style.color = "var(--red)";
+        if (item.healthState !== "stale") {
+          item.healthState = "stale";
+          addEvent("warn", "topic", name + " ne publie plus");
+        }
+      } else {
+        health.textContent = "Actif";
+        health.style.color = "var(--green)";
+        item.healthState = "active";
+      }
+      rate.textContent = item.rate + " Hz";
+      age.textContent = item.lastAt ? (ageMs / 1000).toFixed(1) + " s" : "-";
+    }
+
+    function latestTarget() {
+      const playbackTarget = telemetry.playbackTarget;
+      const controlTarget = telemetry.controlTarget;
+      const playbackFresh = (
+        playbackTarget.message
+        && Date.now() - playbackTarget.lastAt <= playbackTarget.staleMs
+      );
+      const controlFresh = (
+        controlTarget.message
+        && Date.now() - controlTarget.lastAt <= controlTarget.staleMs
+      );
+      if (
+        playbackActive
+        && playbackFresh
+      ) {
+        return playbackTarget.message;
+      }
+      if (!controlFresh && !playbackFresh) return null;
+      if (!controlFresh) return playbackTarget.message;
+      if (!playbackFresh) return controlTarget.message;
+      return controlTarget.lastAt >= playbackTarget.lastAt
+        ? controlTarget.message
+        : playbackTarget.message;
+    }
+
+    function updateTelemetryDebug() {
+      updateTopicRow("odometry", "odom");
+      updateTopicRow("controlTarget", "controlTarget");
+      updateTopicRow("playbackTarget", "playbackTarget");
+      updateTopicRow("thrusters", "thruster");
+      updateTopicRow("playback", "playback");
+
+      setDot(el.debugPwmDot, disablePwmReceived ? (controlStopped ? "bad" : "ok") : "warn");
+      el.debugPwmState.textContent = disablePwmReceived
+        ? (controlStopped ? "Désactivés" : "Actifs")
+        : "Inconnu";
+      setDot(el.debugKillDot, killSwitchArmed === null ? "warn" : (killSwitchArmed ? "ok" : "bad"));
+      el.debugKillState.textContent = killSwitchArmed === null
+        ? "Inconnue"
+        : (killSwitchArmed ? "Armée" : "Retirée");
+      setDot(el.debugMag2Dot, magneticSwitch2Active === null ? "warn" : "ok");
+      el.debugMag2State.textContent = magneticSwitch2Active === null
+        ? "Inconnue"
+        : (magneticSwitch2Active ? "Active" : "Inactive");
+
+      if (latestPlaybackStatus) {
+        const current = Number(latestPlaybackStatus.current_index || 0);
+        const total = Number(latestPlaybackStatus.waypoint_count || 0);
+        el.debugPlaybackState.textContent = String(latestPlaybackStatus.state || "-").toUpperCase();
+        el.debugPlaybackDetail.textContent = [
+          total ? "Point " + (current + 1) + "/" + total : "Aucun point",
+          latestPlaybackStatus.reference_mode || "-",
+          latestPlaybackStatus.progression_mode || "-",
+          latestPlaybackStatus.error || ""
+        ].filter(Boolean).join(" | ");
+      }
+
+      const odom = telemetry.odometry.message;
+      if (odom && odom.pose && odom.pose.pose) {
+        const pose = odom.pose.pose;
+        const twist = odom.twist && odom.twist.twist;
+        const angles = quaternionToEuler(pose.orientation);
+        el.debugPosition.textContent = vectorText(pose.position) + " m";
+        el.debugOrientation.textContent = [
+          fixed(degrees(angles.roll), 1),
+          fixed(degrees(angles.pitch), 1),
+          fixed(degrees(angles.yaw), 1)
+        ].join(" / ") + "°";
+        el.debugLinearVelocity.textContent = vectorText(twist && twist.linear) + " m/s";
+        el.debugAngularVelocity.textContent = vectorText(twist && twist.angular) + " rad/s";
+        el.debugDepth.textContent = fixed(-Number(pose.position.z || 0), 2) + " m";
+        el.debugOdomFrame.textContent = [
+          odom.header && odom.header.frame_id,
+          odom.child_frame_id
+        ].filter(Boolean).join(" → ") || "-";
+
+        const target = latestTarget();
+        if (target && target.pose) {
+          const targetAngles = quaternionToEuler(target.pose.orientation);
+          const dx = Number(target.pose.position.x || 0) - Number(pose.position.x || 0);
+          const dy = Number(target.pose.position.y || 0) - Number(pose.position.y || 0);
+          const dz = Number(target.pose.position.z || 0) - Number(pose.position.z || 0);
+          el.debugTargetSource.textContent = target.source_mode || "-";
+          el.debugTargetPosition.textContent = vectorText(target.pose.position) + " m";
+          el.debugTargetOrientation.textContent = [
+            fixed(degrees(targetAngles.roll), 1),
+            fixed(degrees(targetAngles.pitch), 1),
+            fixed(degrees(targetAngles.yaw), 1)
+          ].join(" / ") + "°";
+          el.debugHorizontalError.textContent = fixed(Math.hypot(dx, dy), 3) + " m";
+          el.debugDepthError.textContent = fixed(dz, 3) + " m";
+          el.debugYawError.textContent = fixed(
+            degrees(wrapAngle(targetAngles.yaw - angles.yaw)),
+            1
+          ) + "°";
+        } else {
+          el.debugTargetSource.textContent = "-";
+          el.debugTargetPosition.textContent = "-";
+          el.debugTargetOrientation.textContent = "-";
+          el.debugHorizontalError.textContent = "-";
+          el.debugDepthError.textContent = "-";
+          el.debugYawError.textContent = "-";
+        }
+      }
+
+      const efforts = telemetry.thrusters.message && telemetry.thrusters.message.efforts;
+      if (Array.isArray(efforts)) {
+        let maxEffort = 0;
+        thrusterDebugValues.forEach((value, index) => {
+          const effort = Number(efforts[index] || 0);
+          maxEffort = Math.max(maxEffort, Math.abs(effort));
+          value.textContent = fixed(effort, 2) + " N";
+          value.style.color = Math.abs(effort) > 13.5 ? "var(--amber)" : "var(--text)";
+        });
+        el.debugThrusterMax.textContent = "Max: " + fixed(maxEffort, 2) + " N";
+      }
     }
 
     function setPlaybackReference(mode) {
@@ -1938,7 +2584,6 @@
         el.progressionSetpointBtn,
         el.progressionTimestampBtn
       ].forEach((button) => { button.disabled = modeLocked; });
-      el.profileStandstillBtn.disabled = !controlStopped;
       el.applyMatricesBtn.disabled = !controlStopped;
     }
 
@@ -1978,8 +2623,16 @@
         recordRequestPending,
         playbackStatus,
         playbackRequestPending,
+        controlStopped,
+        killSwitchArmed,
+        magneticSwitch2Active,
         lastJoy,
-        manualAssistedDebug
+        manualAssistedDebug,
+        odometry: telemetry.odometry.message,
+        controlTarget: telemetry.controlTarget.message,
+        playbackTarget: telemetry.playbackTarget.message,
+        thrusters: telemetry.thrusters.message,
+        playback: telemetry.playback.message
       }, null, 2);
     }
 
@@ -1988,6 +2641,7 @@
       if (joy) {
         publishJoy(joy);
       }
+      updateTelemetryDebug();
       updateDebug();
     }
 
@@ -2033,7 +2687,18 @@
     document.getElementById("clearDebugBtn").addEventListener("click", () => {
       lastJoy = null;
       manualAssistedDebug = null;
+      Object.values(telemetry).forEach((item) => {
+        item.lastAt = 0;
+        item.count = 0;
+        item.rate = 0;
+        item.message = null;
+        item.healthState = "waiting";
+      });
       updateDebug();
+    });
+    el.clearEventsBtn.addEventListener("click", () => {
+      el.eventLog.replaceChildren();
+      el.eventCount.textContent = "0 événement";
     });
 
     el.cam1.addEventListener("load", () => {
@@ -2062,8 +2727,10 @@
       setTimeout(connect, 150);
     }
     resetInputs();
+    addEvent("info", "dashboard", "Dashboard prêt");
     publishTimer = setInterval(loop, publishPeriodMs);
     setInterval(updatePublishRate, 1000);
+    setInterval(updateTopicRates, 1000);
     setInterval(updateCameraSources, 500);
     updatePlaybackButtons();
     updateDebug();
