@@ -15,6 +15,9 @@
   <exec_depend>rosbridge_server</exec_depend>
   <exec_depend>ros2launch</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>sub_control</exec_depend>
+  <exec_depend>sub_hardware</exec_depend>
+  <exec_depend>sub_playback</exec_depend>
 
   
   <export>

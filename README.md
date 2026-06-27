@@ -10,11 +10,11 @@ Welcome to the core ROS 2 workspace for the ASUQTR submarine. This repository co
 ASUQTR's ROS2 software architecture contains 5 ROS2 packages, following a typical layered architecture patern :
 > [!TIP]
 > Click the sub package links to go to their README.md and get further details and specifications
-* [`sub_hardware`](src/sub_hardware/)
-* [`sub_control`](src/sub_control/)
-* [`sub_autonomy`](src/sub_autonomy/)
-* [`sub_interfaces`](src/sub_interfaces/)
-* [`sub_launch`](src/sub_launch/)
+* [`sub_hardware`](workspace/packages/sub_hardware/)
+* [`sub_control`](workspace/packages/sub_control/)
+* [`sub_autonomy`](workspace/packages/sub_autonomy/)
+* [`sub_interfaces`](workspace/packages/sub_interfaces/)
+* [`sub_launch`](workspace/packages/sub_launch/)
 
 
 In the following architecture diagram, __BLACK__ icons are ASUQTR nodes/custom code, while __WHITE__ icons are standard ROS2 packages.
@@ -69,12 +69,12 @@ You now have a full IDE and integrated terminals directly inside the ROS 2 envir
 </a>
 
 1. SSH log into the Jetson Xavier.  [See these instructions](#ssh)
-2. Clone this repo via SSH on the in the `$HOME` directory
-3. `cd` into the repo and run `setup_xavier.sh`. This will setup ssd, docker, jetson IO permissions, etc. and deploy ASUQTR infrastructure.
+2. Clone this repo via SSH. It can live inside a larger working folder; the scripts resolve paths relative to the repo.
+3. `cd` into the repo and run `env/jetson/setup.sh`. This will setup ssd, docker, jetson IO permissions, etc. and deploy ASUQTR infrastructure.
     ```bash
     # While logged into a Jetson Xavier over SSH
-    cd ~/ros2_workspace
-    sudo ./setup_jetson.sh
+    cd /path/to/ros2_workspace
+    sudo ./env/jetson/setup.sh
     ```
 4. Reboot the jetson xavier
 
@@ -83,7 +83,7 @@ You now have a full IDE and integrated terminals directly inside the ROS 2 envir
 For software development and simulation, we use Docker. The included `docker-compose.yaml` file in this repository allows to spin up the ROS 2 development container alongside the ASUQTR web dashboard.
 ### 🐳📦 Starting ASUQTR containers
 > [!WARNING]
-> If you ran the `setup_xavier.sh` script from [1. Install](#install) step, the containers have already been started with a a `unless-stopped` policy, which means they will always on Xavier power up, unless you explicitely stop them with in a terminal
+> If you ran the `env/jetson/setup.sh` script from [1. Install](#install) step, the containers have already been started with a a `unless-stopped` policy, which means they will always on Xavier power up, unless you explicitely stop them with in a terminal
 
 1. To verify if both the `asuqtr_ros2` and `asuqtr-dashboard` containers are running:
    ```bash
@@ -107,6 +107,79 @@ To view the UI, simply open a web browser (Chrome, Firefox, etc.) on your host c
 ```text
 http://<JETSON_IP>
 ```
+
+### 🎮 Manual Assisted Pilot Dashboard
+The ROS workspace also includes a standalone operator UI for the `manual_assisted` control workflow:
+
+```text
+workspace/packages/sub_hardware/web/manual_assisted_dashboard.html
+```
+
+This dashboard connects to ROS through `rosbridge`, publishes `sensor_msgs/msg/Joy` on `/dashboard/gamepad`, and displays the camera endpoints exposed by the vision service.
+
+For simulation or bench testing:
+
+1. Start the ROS launch that includes `control_node` and `rosbridge_server`.
+   ```bash
+   ros2 launch sub_launch unity_sim.launch.yaml
+   ```
+2. Open the dashboard served by the camera service, or open
+   `workspace/packages/sub_hardware/web/manual_assisted_dashboard.html` locally.
+3. Use `Local` for a local simulation host or set the Jetson IP, then click `Connecter`.
+4. Confirm the control node receives joystick messages.
+   ```bash
+   ros2 topic echo /dashboard/gamepad
+   ```
+
+The dashboard expects ROSBridge on port `9090`. The gamepad mapping matches `workspace/packages/sub_control/scripts/control_node.py`: browser Back/Start are remapped to ROS button indices `6` and `7`, and the trigger axes are published as Joy axes `2` and `5`.
+
+Unity and the dashboard both connect as WebSocket clients to the same `rosbridge_websocket` server. They should both use `ws://<ROS_HOST>:9090`; do not start a second `rosbridge_websocket` on the same port.
+
+For an in-water manual-assisted test, launch the complete hardware, control,
+ROSBridge, dashboard, and camera stack with:
+
+```bash
+ros2 launch sub_launch manual_assisted_pool.launch.py
+```
+
+The default camera devices are indices `0` and `4`. Override them when needed:
+
+```bash
+ros2 launch sub_launch manual_assisted_pool.launch.py camera_1:=0 camera_2:=2
+```
+
+To save one JPEG every five frames from both streams:
+
+```bash
+ros2 launch sub_launch manual_assisted_pool.launch.py \
+  save_video:=true label:=pool-test-01
+```
+
+The dashboard is served on port `6969`. From the pilot laptop, an SSH tunnel is
+recommended so the page, ROSBridge, and browser gamepad are all accessed through
+localhost:
+
+```bash
+ssh -L 6969:127.0.0.1:6969 -L 9090:127.0.0.1:9090 asuqtr@<JETSON_IP>
+```
+
+Then open `http://localhost:6969/`. Before pressing Start, verify:
+
+```bash
+ros2 param get /control_node control_mode
+ros2 topic echo /dashboard/gamepad
+ros2 topic echo /odometry/filtered --once
+```
+
+To verify the Unity -> EKF path:
+
+```bash
+ros2 topic info /unity/odometry/raw -v
+ros2 topic echo --once /unity/odometry/raw
+ros2 topic echo --once /odometry/filtered
+```
+
+The Unity scene publishes `/unity/odometry/raw` as `nav_msgs/msg/Odometry`, and `robot_localization_unity.yaml` feeds that topic into the EKF as `odom0`.
 
 ## 🛠️ 3. Build ROS2 Workspace
 
@@ -165,4 +238,4 @@ ros2 topic pub -1 /debug/target_pose geometry_msgs/msg/PoseStamped "{pose: {posi
 ```
 
 > [!IMPORTANT]
-> This command is only available if the `control_node` is in `lqr_tuning` mode! See `src/sub_control/config/params.yaml`
+> This command is only available if the `control_node` is in `lqr_tuning` mode! See `workspace/packages/sub_control/config/params.yaml`

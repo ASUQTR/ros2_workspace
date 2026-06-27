@@ -1,0 +1,9 @@
+string command
+string file_path
+bool loop
+string reference_mode
+string progression_mode
+---
+bool success
+string message
+uint32 waypoint_count

@@ -14,6 +14,7 @@ REAL_USER=${SUDO_USER:-$USER}
 
 # Get the absolute directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+REPO_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 # Dynamically find the parent directory (e.g., if script is in ~/sub_control_ws, this is ~/)
 PARENT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -154,7 +155,7 @@ git lfs install --skip-repo
 echo "Deploying Sub container infrastructure..."
 
 # Build ASUQTR ROS2 docker image (control/autonomy/hardware ros2 packages etc.)
-docker build -t asuqtr_ros2:latest -f ./env/jetson/Dockerfile .
+docker build -t asuqtr_ros2:latest -f "$SCRIPT_DIR/Dockerfile" "$REPO_ROOT"
 
 # Build ASUQTR Dashboard docker image
 # 1. Define the target directory clearly

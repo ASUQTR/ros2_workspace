@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(sub_hardware)
+project(sub_playback)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -19,23 +19,14 @@ ament_python_install_package(${PROJECT_NAME})
 # This assumes your executable scripts are in a 'scripts' folder, 
 # or you can point directly to the python files inside your module.
 install(PROGRAMS
-  scripts/actuator_node.py
-  scripts/dvl_node.py
-  scripts/sensor_node.py
-  scripts/power_node.py
-  scripts/gpio_node.py
-  scripts/indicator_node.py
-  scripts/sonar_node.py
-  scripts/camera_dashboard_server.py
+  scripts/playback_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 # 3. Install your launch files, param files, and other data
 # This is where the magic happens for --symlink-install
 install(DIRECTORY
-  launch
   config
-  web
   DESTINATION share/${PROJECT_NAME}
 )
 

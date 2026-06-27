@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from flexbe_core import EventState, Logger
 from flexbe_core.proxy import ProxyPublisher
-from asuqtr_power_node.msg import pod_actuator_cmd.msg
+from asuqtr_power_node.msg import pod_actuator_cmd
 
 # Servo motor position in degrees
 DEFAULT_POS = 90

@@ -6,6 +6,9 @@ launch:
   - arg:
       name: "ekf_config_file"
       default: "$(find-pkg-share sub_control)/config/robot_localization.yaml"
+  - arg:
+      name: "control_mode"
+      default: "lqr_tuning"
 
   # 1. Sub control
   - node:
@@ -14,6 +17,8 @@ launch:
       name: "control_node"
       param:
         - from: "$(find-pkg-share sub_control)/config/params.yaml"
+        - name: "control_mode"
+          value: "$(var control_mode)"
 
   # The TF Tree (Loads Sub geometry)
   - node:
@@ -73,4 +78,3 @@ launch:
       pkg: "rosbridge_server"
       exec: "rosbridge_websocket"
       name: "rosbridge_websocket"
-
