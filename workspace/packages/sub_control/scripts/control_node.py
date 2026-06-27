@@ -180,6 +180,11 @@ class ControlNode(Node):
         self.last_depth_up_button_state = False
         self.last_depth_down_button_state = False
         self.last_hold_button_state = False
+        self.last_lqr_profile_button_states = {
+            'standstill': False,
+            'forward': False,
+            'turning': False
+        }
         self.software_kill_active = False
         self._last_mode_for_transition = None
         self.q_values = np.array(DEFAULT_Q, dtype=np.float64)
@@ -1044,6 +1049,11 @@ class ControlNode(Node):
             return
 
         if self._current_mode == ControlMode.MANUAL_ASSISTED:
+            self._handle_lqr_profile_buttons(
+                standstill_button=button_a,
+                forward_button=button_y,
+                turning_button=button_b
+            )
             if self.software_kill_active:
                 return
             if self._has_recent_playback_target():
@@ -1052,8 +1062,8 @@ class ControlNode(Node):
                 forward_cmd=left_stick_y,
                 yaw_cmd=left_stick_x,
                 vertical_cmd=-triggers_axis,
-                roll_cmd=float(button_b) - float(button_x),
-                pitch_cmd=float(button_a) - float(button_y)
+                roll_cmd=0.0,
+                pitch_cmd=0.0
             )
             return
         
@@ -1593,6 +1603,28 @@ class ControlNode(Node):
 
     def _now_seconds(self):
         return self.get_clock().now().nanoseconds * 1e-9
+
+    def _handle_lqr_profile_buttons(self, standstill_button, forward_button, turning_button):
+        profile_buttons = {
+            'standstill': bool(standstill_button),
+            'forward': bool(forward_button),
+            'turning': bool(turning_button)
+        }
+        selected_profile = None
+        for profile, pressed in profile_buttons.items():
+            if pressed and not self.last_lqr_profile_button_states.get(profile, False):
+                selected_profile = profile
+                break
+        self.last_lqr_profile_button_states = profile_buttons
+
+        if selected_profile is None or selected_profile == self.lqr_profile:
+            return
+
+        result = self.set_parameters([Parameter('lqr_profile', value=selected_profile)])
+        if result and not result[0].successful:
+            self.get_logger().warn(
+                f"Could not switch LQR profile to {selected_profile}: {result[0].reason}"
+            )
     
     def _is_mode_switch_requested(self, mode_switch_button):
         """

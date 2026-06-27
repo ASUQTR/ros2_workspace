@@ -357,6 +357,40 @@
       text-overflow: ellipsis;
     }
 
+    .profile-map {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .pilot-profile-map {
+      margin-bottom: 10px;
+    }
+
+    .profile-chip {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 6px 9px;
+      background: #10151a;
+      color: var(--muted);
+      font-weight: 720;
+      min-height: 40px;
+    }
+
+    .profile-chip span {
+      display: block;
+      color: var(--quiet);
+      font-size: 12px;
+      font-weight: 680;
+      margin-bottom: 2px;
+    }
+
+    .profile-chip.active {
+      border-color: rgba(49, 198, 122, 0.65);
+      background: rgba(49, 198, 122, 0.12);
+      color: var(--text);
+    }
+
     .telemetry-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(150px, 1fr));
@@ -783,6 +817,7 @@
       .camera-grid,
       .control-grid,
       .pilot-layout,
+      .profile-map,
       .button-row,
       .button-row.three,
       .readout-grid,
@@ -834,59 +869,6 @@
         </div>
         <div class="panel-body">
           <ol id="eventLog" class="event-log" aria-live="polite"></ol>
-        </div>
-      </section>
-
-      <section class="panel tab-hidden" data-dashboard-tab="connection">
-        <div class="panel-header">
-          <div>
-            <h2 class="panel-title">Liaisons</h2>
-            <p class="panel-kicker" id="hostHint">Pret</p>
-          </div>
-        </div>
-        <div class="panel-body field-grid">
-          <div class="field">
-            <label for="jetsonIp">Jetson / host</label>
-            <input id="jetsonIp" value="192.168.0.10" autocomplete="off">
-          </div>
-          <div class="field">
-            <label for="rosbridgeUrl">ROSBridge</label>
-            <input id="rosbridgeUrl" value="ws://192.168.0.10:9090" autocomplete="off">
-          </div>
-          <div class="field">
-            <label for="cameraUrl">Fallback cameras physiques</label>
-            <input id="cameraUrl" value="http://192.168.0.10:6969" autocomplete="off">
-          </div>
-          <div class="button-row three">
-            <button id="localBtn" class="ghost" type="button">Local</button>
-            <button id="jetsonBtn" class="ghost" type="button">Jetson</button>
-            <button id="connectBtn" class="primary" type="button">Connecter</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel tab-hidden" data-dashboard-tab="connection">
-        <div class="panel-header">
-          <div>
-            <h2 class="panel-title">Etat</h2>
-            <p class="panel-kicker" id="publishRate">0 Hz</p>
-          </div>
-        </div>
-        <div class="panel-body">
-          <div class="status-grid">
-            <div class="status-card">
-              <div class="status-label">ROS</div>
-              <div class="status-value"><span id="rosDot" class="dot bad"></span><span id="rosText">Hors ligne</span></div>
-            </div>
-            <div class="status-card">
-              <div class="status-label">Gamepad</div>
-              <div class="status-value"><span id="gamepadDot" class="dot bad"></span><span id="gamepadText">Absent</span></div>
-            </div>
-            <div class="status-card">
-              <div class="status-label">Joy</div>
-              <div class="status-value"><span id="pubDot" class="dot warn"></span><span id="pubText">En attente</span></div>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -946,8 +928,12 @@
               <div class="metric-label">Playback</div>
               <div id="playbackMetric" class="metric-value">-</div>
             </div>
+            <div class="metric">
+              <div class="metric-label">Profil LQR</div>
+              <div id="lqrProfileMetric" class="metric-value">Standstill</div>
+            </div>
           </div>
-          <div class="tiny">Start arme MANUAL_ASSISTED. Select active l'arret logiciel. Record sauvegarde les targets carotte. Load/Play utilise un JSON disponible sur la machine ROS.</div>
+          <div class="tiny">Start arme MANUAL_ASSISTED. Select active l'arret logiciel. A/Y/B changent Standstill/Forward/Forward + Turning.</div>
         </div>
       </section>
 
@@ -983,6 +969,59 @@
     </aside>
 
     <section class="main">
+      <section class="panel tab-hidden" data-dashboard-tab="connection">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Liaisons</h2>
+            <p class="panel-kicker" id="hostHint">Pret</p>
+          </div>
+        </div>
+        <div class="panel-body field-grid">
+          <div class="field">
+            <label for="jetsonIp">Jetson / host</label>
+            <input id="jetsonIp" value="192.168.0.10" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="rosbridgeUrl">ROSBridge</label>
+            <input id="rosbridgeUrl" value="ws://192.168.0.10:9090" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="cameraUrl">Fallback cameras physiques</label>
+            <input id="cameraUrl" value="http://192.168.0.10:6969" autocomplete="off">
+          </div>
+          <div class="button-row three">
+            <button id="localBtn" class="ghost" type="button">Local</button>
+            <button id="jetsonBtn" class="ghost" type="button">Jetson</button>
+            <button id="connectBtn" class="primary" type="button">Connecter</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="connection">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Etat</h2>
+            <p class="panel-kicker" id="publishRate">0 Hz</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="status-grid">
+            <div class="status-card">
+              <div class="status-label">ROS</div>
+              <div class="status-value"><span id="rosDot" class="dot bad"></span><span id="rosText">Hors ligne</span></div>
+            </div>
+            <div class="status-card">
+              <div class="status-label">Gamepad</div>
+              <div class="status-value"><span id="gamepadDot" class="dot bad"></span><span id="gamepadText">Absent</span></div>
+            </div>
+            <div class="status-card">
+              <div class="status-label">Joy</div>
+              <div class="status-value"><span id="pubDot" class="dot warn"></span><span id="pubText">En attente</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="panel" data-dashboard-tab="pilotage">
         <div class="panel-header">
           <div>
@@ -1013,6 +1052,11 @@
           </div>
         </div>
         <div class="panel-body">
+          <div class="profile-map pilot-profile-map">
+            <div id="pilotProfileStandstill" class="profile-chip active"><span>A</span>Standstill</div>
+            <div id="pilotProfileForward" class="profile-chip"><span>Y</span>Forward</div>
+            <div id="pilotProfileTurning" class="profile-chip"><span>B</span>Forward + Turning</div>
+          </div>
           <div class="pilot-layout">
             <div class="gamepad-visual" aria-label="Gamepad state">
               <div class="gamepad-shell"></div>
@@ -1292,6 +1336,10 @@
       gamepadName: document.getElementById("gamepadName"),
       debug: document.getElementById("debug"),
       modeMetric: document.getElementById("modeMetric"),
+      lqrProfileMetric: document.getElementById("lqrProfileMetric"),
+      pilotProfileStandstill: document.getElementById("pilotProfileStandstill"),
+      pilotProfileForward: document.getElementById("pilotProfileForward"),
+      pilotProfileTurning: document.getElementById("pilotProfileTurning"),
       cameraHint: document.getElementById("cameraHint"),
       recordBtn: document.getElementById("recordBtn"),
       playbackPath: document.getElementById("playbackPath"),
@@ -2020,6 +2068,16 @@
       el.profileStandstillBtn.classList.toggle("active", profile === "standstill");
       el.profileForwardBtn.classList.toggle("active", profile === "forward");
       el.profileTurningBtn.classList.toggle("active", profile === "turning");
+      el.lqrProfileMetric.textContent = lqrProfileLabel(profile);
+      el.pilotProfileStandstill.classList.toggle("active", profile === "standstill");
+      el.pilotProfileForward.classList.toggle("active", profile === "forward");
+      el.pilotProfileTurning.classList.toggle("active", profile === "turning");
+    }
+
+    function lqrProfileLabel(profile) {
+      if (profile === "forward") return "Forward";
+      if (profile === "turning") return "Forward + Turning";
+      return "Standstill";
     }
 
     function doubleParameter(name, value) {
@@ -2732,6 +2790,9 @@
     setInterval(updatePublishRate, 1000);
     setInterval(updateTopicRates, 1000);
     setInterval(updateCameraSources, 500);
+    setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) requestControlParameters();
+    }, 1500);
     updatePlaybackButtons();
     updateDebug();
   </script>

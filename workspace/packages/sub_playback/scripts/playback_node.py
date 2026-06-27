@@ -10,7 +10,8 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
-from rcl_interfaces.msg import SetParametersResult
+from rcl_interfaces.msg import ParameterEvent, SetParametersResult
+from rcl_interfaces.srv import SetParameters
 from std_msgs.msg import Bool
 
 from sub_interfaces.msg import ControlTarget, PlaybackStatus
@@ -104,6 +105,8 @@ class PlaybackNode(Node):
         self.last_magnetic_switch_state = False
         self.last_error = ''
         self.last_timed_out = False
+        self.current_lqr_profile = 'standstill'
+        self.last_applied_lqr_profile = ''
 
         self.recording_service = self.create_service(
             PlaybackRecording, 'playback_recording', self.handle_playback_recording
@@ -113,6 +116,9 @@ class PlaybackNode(Node):
         )
         self.command_service = self.create_service(
             PlaybackCommand, 'playback_command', self.handle_playback_command
+        )
+        self.control_parameter_client = self.create_client(
+            SetParameters, '/control_node/set_parameters'
         )
 
         sensor_qos = QoSProfile(
@@ -148,6 +154,9 @@ class PlaybackNode(Node):
         )
         self.magnetic_switch_subscription = self.create_subscription(
             Bool, 'magnetic_switch_2', self.magnetic_switch_callback, latched_qos
+        )
+        self.parameter_event_subscription = self.create_subscription(
+            ParameterEvent, 'parameter_events', self.parameter_event_callback, latched_qos
         )
         self.playback_target_pub = self.create_publisher(
             ControlTarget, 'control/playback_target', sensor_qos
@@ -299,6 +308,16 @@ class PlaybackNode(Node):
         if msg.source_mode == 'manual_assisted':
             self.latest_control_target = msg
 
+    def parameter_event_callback(self, msg):
+        if msg.node not in ('/control_node', 'control_node'):
+            return
+        for parameter in list(msg.new_parameters) + list(msg.changed_parameters):
+            if parameter.name != 'lqr_profile':
+                continue
+            profile = parameter.value.string_value.strip().lower()
+            if profile in ('standstill', 'forward', 'turning'):
+                self.current_lqr_profile = profile
+
     def odometry_callback(self, msg):
         self.current_odometry = msg
         self.last_odometry_at = self.get_clock().now()
@@ -361,7 +380,8 @@ class PlaybackNode(Node):
             'roll': float(roll),
             'pitch': float(pitch),
             'yaw': float(yaw),
-            'carrot_body': carrot
+            'carrot_body': carrot,
+            'lqr_profile': self.current_lqr_profile
         }
 
     def is_significant_keyframe(self, previous, candidate):
@@ -491,6 +511,7 @@ class PlaybackNode(Node):
             body_right = float(body.get('right', 0.0))
             body_yaw = float(body.get('yaw', 0.0))
             depth_target = float(item.get('depth_target', -world_position[2]))
+            lqr_profile = self.normalize_lqr_profile(item.get('lqr_profile', 'standstill'))
         else:
             world_position = item.get('position')
             world_orientation = item.get('angles', [0.0, 0.0, 0.0, 1.0])
@@ -501,6 +522,7 @@ class PlaybackNode(Node):
                 item, idx, all_items, yaw
             )
             depth_target = float(-world_position[2])
+            lqr_profile = 'standstill'
 
         return {
             'time_from_start': float(
@@ -517,8 +539,16 @@ class PlaybackNode(Node):
             'yaw': yaw,
             'carrot_body': [
                 float(value) for value in item.get('carrot_body', [0.0, 0.0])[:2]
-            ]
+            ],
+            'lqr_profile': lqr_profile
         }
+
+    @staticmethod
+    def normalize_lqr_profile(value):
+        profile = str(value).strip().lower()
+        if profile not in ('standstill', 'forward', 'turning'):
+            return 'standstill'
+        return profile
 
     def derive_legacy_body_delta(self, item, idx, all_items, current_yaw):
         if idx == 0:
@@ -558,6 +588,7 @@ class PlaybackNode(Node):
         self.is_playing = True
         self.last_error = ''
         self.last_timed_out = False
+        self.last_applied_lqr_profile = ''
         self.activate_current_waypoint()
         self.publish_status('playing')
         return True, (
@@ -841,6 +872,7 @@ class PlaybackNode(Node):
             self.last_target_publish_at = now
 
     def publish_playback_target(self, target, waypoint):
+        self.apply_lqr_profile_for_waypoint(waypoint)
         msg = ControlTarget()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'odom'
@@ -855,6 +887,23 @@ class PlaybackNode(Node):
         msg.carrot_forward = waypoint['carrot_body'][0]
         msg.carrot_right = waypoint['carrot_body'][1]
         self.playback_target_pub.publish(msg)
+
+    def apply_lqr_profile_for_waypoint(self, waypoint):
+        profile = self.normalize_lqr_profile(waypoint.get('lqr_profile', 'standstill'))
+        if profile == self.last_applied_lqr_profile:
+            return
+        if not self.control_parameter_client.service_is_ready():
+            self.get_logger().warn(
+                f"Cannot apply playback LQR profile '{profile}': control_node parameter service is not ready.",
+                throttle_duration_sec=2.0
+            )
+            return
+
+        request = SetParameters.Request()
+        request.parameters = [Parameter('lqr_profile', value=profile).to_parameter_msg()]
+        self.control_parameter_client.call_async(request)
+        self.last_applied_lqr_profile = profile
+        self.get_logger().info(f"Playback requested LQR profile: {profile}")
 
     def is_target_reached(self):
         pose = self.current_odometry.pose.pose
