@@ -1059,7 +1059,7 @@ class ControlNode(Node):
             if self._has_recent_playback_target():
                 return
             self._manual_assisted_gamepad_update(
-                forward_cmd=left_stick_y,
+                forward_cmd=-left_stick_y,
                 yaw_cmd=left_stick_x,
                 vertical_cmd=-triggers_axis,
                 roll_cmd=0.0,

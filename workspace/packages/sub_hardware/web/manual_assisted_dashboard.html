@@ -2636,13 +2636,14 @@
 
     function updateControlLocks() {
       const modeLocked = playbackActive || recordEnabled;
+      const rosbridgeConnected = Boolean(ws && ws.readyState === WebSocket.OPEN);
       [
         el.referenceBodyBtn,
         el.referenceWorldBtn,
         el.progressionSetpointBtn,
         el.progressionTimestampBtn
       ].forEach((button) => { button.disabled = modeLocked; });
-      el.applyMatricesBtn.disabled = !controlStopped;
+      el.applyMatricesBtn.disabled = !rosbridgeConnected;
     }
 
     function sendPlaybackCommand(command) {
