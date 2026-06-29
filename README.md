@@ -1,5 +1,11 @@
 # ASUQTR ROS 2 Workspace
 
+> [!NOTE]
+> This branch is focused on manual-assisted "carrot on a stick" control and
+> record/playback development. See [`BRANCH_README.md`](BRANCH_README.md) before
+> using this branch as a reference for EKF, sensor fusion, or pool-test
+> navigation configuration.
+
 <p align="center">
   <img src="docs/logosub.png" alt="ASUQTR logo" width="80" style="vertical-align: middle; margin-right: 30px;"/><img src="docs/sub.JPG" alt="ASUQTR Submarine" width="280" style="vertical-align: middle;"/><img src="docs/ros2.png" alt="ROS2" width="80" style="vertical-align: middle; margin-left: 30px;"/>
 </p>
