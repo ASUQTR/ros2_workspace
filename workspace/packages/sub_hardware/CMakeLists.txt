@@ -9,7 +9,6 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(rclpy REQUIRED)
-find_package(rclpy REQUIRED)
 
 
 # 1. Install your Python module (the directory containing your __init__.py)

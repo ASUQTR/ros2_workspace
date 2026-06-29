@@ -141,23 +141,63 @@ The dashboard expects ROSBridge on port `9090`. The gamepad mapping matches `wor
 
 Unity and the dashboard both connect as WebSocket clients to the same `rosbridge_websocket` server. They should both use `ws://<ROS_HOST>:9090`; do not start a second `rosbridge_websocket` on the same port.
 
-For an in-water manual-assisted test, launch the complete hardware, control,
-ROSBridge, dashboard, and camera stack with:
+### 🚀 Manual Assisted Launch Files
+
+The current manual-assisted test workflow uses YAML launch files.
+
+Use `unity_sim.launch.yaml` for Unity simulation and dashboard development:
 
 ```bash
-ros2 launch sub_launch manual_assisted_pool.launch.py
+ros2 launch sub_launch unity_sim.launch.yaml
 ```
+
+This starts:
+
+* `control_node` in `manual_assisted` mode;
+* `robot_localization` using the Unity EKF config;
+* `rosbridge_websocket` on port `9090`;
+* `playback_node`;
+* `camera_dashboard_server` on port `6969`, with physical cameras disabled.
+
+Use `manual_assisted_nomag_pool.launch.yaml` for real-sub pool tests with the
+current no-magnetometer sensor-fusion setup:
+
+```bash
+ros2 launch sub_launch manual_assisted_nomag_pool.launch.yaml
+```
+
+This starts:
+
+* `control_node` in `manual_assisted` mode;
+* `robot_localization` with `EKF_no_mag_yaw.yaml` by default;
+* physical hardware nodes: actuator, depth sensor, GPIO, DVL, and VectorNav;
+* `rosbridge_websocket` on port `9090`;
+* `playback_node`;
+* `camera_dashboard_server` on port `6969`, with physical camera streams.
+
+Use `sub.launch.yaml` for the normal real-sub stack without the extra manual
+assisted pool-test helpers. Its default control mode is `lqr_tuning`, but it can
+be overridden:
+
+```bash
+ros2 launch sub_launch sub.launch.yaml control_mode:=manual_assisted
+```
+
+Use `lqr_tuning.launch.yaml` when testing the standalone LQR tuning helper.
+
+The older Python pool launch was removed from this branch to keep the launch
+path aligned with the team's YAML launch convention.
 
 The default camera devices are indices `0` and `4`. Override them when needed:
 
 ```bash
-ros2 launch sub_launch manual_assisted_pool.launch.py camera_1:=0 camera_2:=2
+ros2 launch sub_launch manual_assisted_nomag_pool.launch.yaml camera_1:=0 camera_2:=2
 ```
 
 To save one JPEG every five frames from both streams:
 
 ```bash
-ros2 launch sub_launch manual_assisted_pool.launch.py \
+ros2 launch sub_launch manual_assisted_nomag_pool.launch.yaml \
   save_video:=true label:=pool-test-01
 ```
 

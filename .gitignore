@@ -3,6 +3,7 @@ build/
 install/
 log/
 workspace/recordings/
+*.mcap
 
 # --- Python ---
 __pycache__/
