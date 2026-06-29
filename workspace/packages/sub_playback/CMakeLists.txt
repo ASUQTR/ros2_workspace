@@ -20,6 +20,7 @@ ament_python_install_package(${PROJECT_NAME})
 # or you can point directly to the python files inside your module.
 install(PROGRAMS
   scripts/playback_node.py
+  scripts/export_recordings.sh
   DESTINATION lib/${PROJECT_NAME}
 )
 

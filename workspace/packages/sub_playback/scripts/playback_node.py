@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 import json
 import math
+import shutil
+from datetime import datetime
+from pathlib import Path
 from typing import cast
 
 import rclpy
@@ -73,6 +76,21 @@ class PlaybackNode(Node):
         )
         self.require_kill_switch_armed = bool(
             self.declare_parameter('require_kill_switch_armed', True).value
+        )
+        self.recording_output_dir = str(
+            self.declare_parameter(
+                'recording_output_dir',
+                '/workspace/recordings/playback'
+            ).value
+        )
+        self.latest_recording_filename = str(
+            self.declare_parameter(
+                'latest_recording_filename',
+                'waypoints_latest.json'
+            ).value
+        )
+        self.write_legacy_tmp_copy = bool(
+            self.declare_parameter('write_legacy_tmp_copy', True).value
         )
         self.add_on_set_parameters_callback(self.parameter_callback)
 
@@ -192,6 +210,15 @@ class PlaybackNode(Node):
                 updates[param.name] = bool(param.value)
             elif param.name == 'require_kill_switch_armed':
                 updates[param.name] = bool(param.value)
+            elif param.name in ('recording_output_dir', 'latest_recording_filename'):
+                if param.type_ != Parameter.Type.STRING or not str(param.value).strip():
+                    return SetParametersResult(
+                        successful=False,
+                        reason=f'{param.name} must be a non-empty string'
+                    )
+                updates[param.name] = str(param.value).strip()
+            elif param.name == 'write_legacy_tmp_copy':
+                updates[param.name] = bool(param.value)
             else:
                 return SetParametersResult(
                     successful=False, reason=f'Unsupported parameter: {param.name}'
@@ -222,6 +249,12 @@ class PlaybackNode(Node):
                 self.require_kill_switch_armed = value
                 if not value:
                     self.kill_switch_armed = True
+            elif name == 'recording_output_dir':
+                self.recording_output_dir = value
+            elif name == 'latest_recording_filename':
+                self.latest_recording_filename = value
+            elif name == 'write_legacy_tmp_copy':
+                self.write_legacy_tmp_copy = value
         return SetParametersResult(successful=True)
 
     # Recording
@@ -269,12 +302,16 @@ class PlaybackNode(Node):
             self.maybe_record_keyframe(self.current_odometry, force=True)
         self.is_recording = False
         now_msg = self.get_clock().now().to_msg()
-        filename = f'/tmp/waypoints_{now_msg.sec}_{now_msg.nanosec}.json'
-        latest_filename = '/tmp/waypoints_latest.json'
+        output_dir = Path(self.recording_output_dir).expanduser()
+        wall_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = output_dir / f'waypoints_{wall_stamp}_{now_msg.sec}_{now_msg.nanosec}.json'
+        latest_filename = output_dir / self.latest_recording_filename
         payload = {
             'format_version': self.FORMAT_VERSION,
             'reference_frame': 'odom',
             'record_source': 'odometry/filtered',
+            'recording_saved_at': wall_stamp,
+            'recording_output_dir': str(output_dir),
             'keyframe_thresholds': {
                 'translation_m': self.keyframe_translation,
                 'yaw_deg': math.degrees(self.keyframe_yaw),
@@ -284,9 +321,15 @@ class PlaybackNode(Node):
             'waypoints': self.recorded_waypoints
         }
         try:
+            output_dir.mkdir(parents=True, exist_ok=True)
             for output_path in (filename, latest_filename):
                 with open(output_path, 'w') as output:
                     json.dump(payload, output, indent=2)
+            if self.write_legacy_tmp_copy:
+                legacy_latest = Path('/tmp/waypoints_latest.json')
+                legacy_timestamped = Path('/tmp') / filename.name
+                shutil.copyfile(latest_filename, legacy_latest)
+                shutil.copyfile(filename, legacy_timestamped)
         except Exception as exc:
             self.last_error = f'Failed to save recording: {exc}'
             self.publish_status('error')
@@ -297,7 +340,7 @@ class PlaybackNode(Node):
             self.normalize_waypoint(item, idx, self.recorded_waypoints)
             for idx, item in enumerate(self.recorded_waypoints)
         ]
-        self.loaded_file_path = latest_filename
+        self.loaded_file_path = str(latest_filename)
         self.publish_status('loaded')
         self.get_logger().info(
             f'Saved {len(self.recorded_waypoints)} keyframe(s) to {latest_filename}'

@@ -1,6 +1,9 @@
 playback_node:
   ros__parameters:
     waypoint_timing: 0.2  # Record the manual-assisted target at 5 Hz
+    recording_output_dir: "/workspace/recordings/playback"
+    latest_recording_filename: "waypoints_latest.json"
+    write_legacy_tmp_copy: true
     keyframe_translation_m: 0.25
     keyframe_yaw_deg: 10.0
     keyframe_depth_m: 0.10
