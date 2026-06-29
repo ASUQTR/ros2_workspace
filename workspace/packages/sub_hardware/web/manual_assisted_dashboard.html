@@ -1411,6 +1411,16 @@
     const qInputs = [];
     const rInputs = [];
     const thrusterDebugValues = [];
+    let matrixDirty = false;
+
+    function isMatrixInputFocused() {
+      return [...qInputs, ...rInputs].includes(document.activeElement);
+    }
+
+    function markMatrixDirty() {
+      matrixDirty = true;
+      el.controlSettingsStatus.textContent = "Q/R modifiées, non appliquées";
+    }
 
     function buildMatrixFields(container, labels, inputs) {
       labels.forEach((label, index) => {
@@ -1431,6 +1441,9 @@
 
     buildMatrixFields(el.qMatrixFields, qLabels, qInputs);
     buildMatrixFields(el.rMatrixFields, rLabels, rInputs);
+    [...qInputs, ...rInputs].forEach((input) => {
+      input.addEventListener("input", markMatrixDirty);
+    });
 
     rLabels.forEach((label) => {
       const metric = document.createElement("div");
@@ -1976,10 +1989,10 @@
       el.controlSettingsStatus.textContent = failed ? "Erreur paramètres playback" : "Tolérances appliquées";
     }
 
-    function requestControlParameters() {
+    function requestControlParameters(force = false) {
       send({
         op: "call_service",
-        id: "control-settings-get-" + Date.now(),
+        id: (force ? "control-settings-force-" : "control-settings-get-") + Date.now(),
         service: "/control_node/get_parameters",
         type: "rcl_interfaces/srv/GetParameters",
         args: {
@@ -2000,12 +2013,19 @@
       if (!values || values.length < 6) return;
       const qValues = values[0].double_array_value || [];
       const rValues = values[1].double_array_value || [];
-      qInputs.forEach((input, index) => { input.value = Number(qValues[index] || 0).toFixed(4); });
-      rInputs.forEach((input, index) => { input.value = Number(rValues[index] || 0).toFixed(4); });
+      const force = String(response.id || "").startsWith("control-settings-force-");
+      const canSyncMatrices = force || (!matrixDirty && !isMatrixInputFocused());
+      if (canSyncMatrices) {
+        qInputs.forEach((input, index) => { input.value = Number(qValues[index] || 0).toFixed(4); });
+        rInputs.forEach((input, index) => { input.value = Number(rValues[index] || 0).toFixed(4); });
+        matrixDirty = false;
+      }
       const profile = values[2].string_value || "standstill";
       el.profileTransitionSec.value = Number(values[3].double_value || 0).toFixed(1);
       updateProfileButtons(profile);
-      el.controlSettingsStatus.textContent = "Paramètres synchronisés";
+      el.controlSettingsStatus.textContent = canSyncMatrices
+        ? "Paramètres synchronisés"
+        : "Édition Q/R conservée";
     }
 
     function applyMatrices() {
@@ -2037,7 +2057,10 @@
       const result = response.values && response.values.result;
       const failed = !result || !result.successful;
       el.controlSettingsStatus.textContent = failed ? "Q/R refusées" : "Q/R appliquées";
-      if (!failed) requestControlParameters();
+      if (!failed) {
+        matrixDirty = false;
+        requestControlParameters(true);
+      }
     }
 
     function selectProfile(profile) {
@@ -2061,7 +2084,7 @@
       const results = response.values && response.values.results;
       const failure = results && results.find((result) => !result.successful);
       el.profileStatus.textContent = failure ? failure.reason : "Profil appliqué";
-      if (!failure) requestControlParameters();
+      if (!failure) requestControlParameters(true);
     }
 
     function updateProfileButtons(profile) {
@@ -2734,7 +2757,7 @@
     document.getElementById("progressionSetpointBtn").addEventListener("click", () => setPlaybackProgression("setpoint"));
     document.getElementById("progressionTimestampBtn").addEventListener("click", () => setPlaybackProgression("timestamp"));
     document.getElementById("applyPlaybackSettingsBtn").addEventListener("click", applyPlaybackSettings);
-    document.getElementById("reloadMatricesBtn").addEventListener("click", requestControlParameters);
+    document.getElementById("reloadMatricesBtn").addEventListener("click", () => requestControlParameters(true));
     document.getElementById("applyMatricesBtn").addEventListener("click", applyMatrices);
     document.getElementById("profileStandstillBtn").addEventListener("click", () => selectProfile("standstill"));
     document.getElementById("profileForwardBtn").addEventListener("click", () => selectProfile("forward"));
