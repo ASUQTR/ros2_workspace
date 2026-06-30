@@ -30,6 +30,8 @@ launch:
         - from: "$(find-pkg-share sub_control)/config/params.yaml"
         - name: "control_mode"
           value: "$(var control_mode)"
+        - name: "manual_assisted.forward_axis_sign"
+          value: 1.0
         - name: "use_sim_time"
           value: true
 

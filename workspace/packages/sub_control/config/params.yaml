@@ -19,25 +19,25 @@ control_node:
     lqr_profile_transition_sec: 1.0
     lqr_profiles:
       # Q indices: [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw]
-      # All profiles use R=1 (uniform thruster cost — tuned via Q only).
+      # These pool-safe profiles keep R=15 to reduce thruster aggressiveness.
+      # R=1 was too nervous in Unity and in pool testing.
 
-      # STANDSTILL — station keeping, no intentional motion.
-      # High position stiffness on all axes, strong velocity damping to prevent drift.
-      standstill_q: [14153.8364, 27921.8733, 12058.7374, 2427.1097, 4938.8976, 428.4047, 3259.2031, 2548.1886, 682.1663, 237.9122, 375.4854, 34.6645]
-      standstill_r: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+      # STANDSTILL — baseline real-sub profile.
+      # This is the old matrix that moved slowly but stayed stable and straight.
+      standstill_q: [1052.4762, 578.7808, 670.0731, 3134.6757, 3959.9523, 2453.9726, 265.1124, 303.5306, 204.2912, 12.3207, 19.8116, 12.2442]
+      standstill_r: [15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0]
 
-      # TURNING — rotate in place (yaw maneuver with no translation).
-      # High x/z position to stay put, reduced yaw position Q lets the sub rotate
-      # freely while yaw velocity damping (Q[11]) controls the rotation rate.
-      turning_q: [28507.7968, 4402.7276, 16499.9895, 353.8858, 1268.9529, 1290.9767, 4834.6132, 1894.2097, 161.7118, 36.5767, 140.4822, 53.6096]
-      turning_r: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+      # TURNING — conservative yaw maneuver profile.
+      # Keeps position/leveling authority while allowing yaw to move without R=1 aggressiveness.
+      turning_q: [1000.0, 600.0, 800.0, 3000.0, 3000.0, 1500.0, 300.0, 300.0, 200.0, 20.0, 20.0, 100.0]
+      turning_r: [15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0]
       turning_tuned: true
 
-      # FORWARD — translational motion (straight line, square pattern, general navigation).
-      # Polyvalent profile: strong attitude stiffness to hold heading during surge,
-      # balanced position tracking on all axes.
-      forward_q: [10050.5074, 6856.9020, 12724.4433, 20389.6025, 22523.1066, 24537.2578, 4238.0271, 1421.6574, 509.5113, 942.1300, 154.3947, 74.1019]
-      forward_r: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+      # FORWARD — conservative translation profile.
+      # Slightly stronger than standstill for forward tracking and heading hold,
+      # but still tuned around the stable R=15 baseline.
+      forward_q: [1800.0, 700.0, 1000.0, 4000.0, 4000.0, 3500.0, 450.0, 300.0, 250.0, 50.0, 50.0, 60.0]
+      forward_r: [15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0]
       forward_tuned: true
 
       # --- FUTURE PROFILES (not yet implemented) ---
@@ -56,6 +56,10 @@ control_node:
 
     # Hard software saturation for each thruster command in Newtons.
     max_thruster_force_newton: 14.4
+    # Per-thruster force sign applied just before publishing /thruster_cmd.
+    # Use this to align ROS effort signs with the physical/Unity thruster mounting.
+    # Current test hypothesis: horizontal thrusters 1,2,7,8 need inversion.
+    thruster_force_signs: [-1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0]
 
     # The A matrix stores damping as positive magnitudes; -1.0 makes it dissipative.
     damping_sign: -1.0
@@ -85,3 +89,6 @@ control_node:
       max_pitch_deg: 15.0
       joystick_curve: 1.6
       gamepad_timeout_sec: 0.75
+      # Diagnostic joystick sign. The dashboard publishes +1.0 when the left
+      # stick is pushed forward; keep this at +1.0 unless isolating input issues.
+      forward_axis_sign: 1.0

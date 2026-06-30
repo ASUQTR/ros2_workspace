@@ -55,6 +55,7 @@ DEFAULT_DAMPING_SIGN = -1.0
 DEFAULT_MAX_THRUSTER_FORCE = 14.4
 DEFAULT_MAX_THROTTLE = 0.8
 DEFAULT_JOY_DEAD_ZONE = 0.1
+DEFAULT_THRUSTER_FORCE_SIGNS = [1.0] * 8
 DEFAULT_LQR_PROFILE_TRANSITION_SEC = 1.0
 DEFAULT_MANUAL_ASSISTED_DEPTH = 0.5
 DEFAULT_MANUAL_ASSISTED_MIN_DEPTH = 0.2
@@ -70,6 +71,7 @@ DEFAULT_MANUAL_ASSISTED_MAX_ROLL_DEG = 20.0
 DEFAULT_MANUAL_ASSISTED_MAX_PITCH_DEG = 15.0
 DEFAULT_MANUAL_ASSISTED_JOYSTICK_CURVE = 1.6
 DEFAULT_MANUAL_ASSISTED_GAMEPAD_TIMEOUT = 0.75
+DEFAULT_MANUAL_ASSISTED_FORWARD_AXIS_SIGN = 1.0
 
 # ==========================================
 # ENUMS
@@ -133,6 +135,7 @@ class ControlNode(Node):
         self.declare_parameter('debug_invert_yaw', False)
         self.declare_parameter('damping_sign', DEFAULT_DAMPING_SIGN)
         self.declare_parameter('max_thruster_force_newton', DEFAULT_MAX_THRUSTER_FORCE)
+        self.declare_parameter('thruster_force_signs', DEFAULT_THRUSTER_FORCE_SIGNS)
         self.declare_parameter('manual_assisted.default_depth_target', DEFAULT_MANUAL_ASSISTED_DEPTH)
         self.declare_parameter('manual_assisted.depth_limits_enabled', True)
         self.declare_parameter('manual_assisted.min_depth_target', DEFAULT_MANUAL_ASSISTED_MIN_DEPTH)
@@ -148,6 +151,7 @@ class ControlNode(Node):
         self.declare_parameter('manual_assisted.max_pitch_deg', DEFAULT_MANUAL_ASSISTED_MAX_PITCH_DEG)
         self.declare_parameter('manual_assisted.joystick_curve', DEFAULT_MANUAL_ASSISTED_JOYSTICK_CURVE)
         self.declare_parameter('manual_assisted.gamepad_timeout_sec', DEFAULT_MANUAL_ASSISTED_GAMEPAD_TIMEOUT)
+        self.declare_parameter('manual_assisted.forward_axis_sign', DEFAULT_MANUAL_ASSISTED_FORWARD_AXIS_SIGN)
 
         # PERFORMANCE ARCHITECTURE: Pre-allocate State Arrays
         # Initializing with NaN ensures the LQR math functions won't 
@@ -170,6 +174,7 @@ class ControlNode(Node):
         self.manual_assisted_max_pitch = math.radians(DEFAULT_MANUAL_ASSISTED_MAX_PITCH_DEG)
         self.manual_assisted_joystick_curve = DEFAULT_MANUAL_ASSISTED_JOYSTICK_CURVE
         self.manual_assisted_gamepad_timeout = DEFAULT_MANUAL_ASSISTED_GAMEPAD_TIMEOUT
+        self.manual_assisted_forward_axis_sign = DEFAULT_MANUAL_ASSISTED_FORWARD_AXIS_SIGN
         self.manual_assisted_base_depth_target = DEFAULT_MANUAL_ASSISTED_DEPTH
         self.manual_assisted_depth_target = DEFAULT_MANUAL_ASSISTED_DEPTH
         self.manual_assisted_yaw_target = 0.0
@@ -208,6 +213,10 @@ class ControlNode(Node):
         self.debug_invert_yaw = bool(self.get_parameter('debug_invert_yaw').value)
         self.damping_sign = float(self.get_parameter('damping_sign').value)
         self.max_thruster_force_newton = float(self.get_parameter('max_thruster_force_newton').value)
+        self.thruster_force_signs = np.array(
+            self.get_parameter('thruster_force_signs').value,
+            dtype=np.float64
+        )
         self.manual_assisted_default_depth_target = float(self.get_parameter('manual_assisted.default_depth_target').value)
         self.manual_assisted_depth_limits_enabled = bool(self.get_parameter('manual_assisted.depth_limits_enabled').value)
         self.manual_assisted_min_depth_target = float(self.get_parameter('manual_assisted.min_depth_target').value)
@@ -223,6 +232,7 @@ class ControlNode(Node):
         self.manual_assisted_max_pitch = math.radians(float(self.get_parameter('manual_assisted.max_pitch_deg').value))
         self.manual_assisted_joystick_curve = float(self.get_parameter('manual_assisted.joystick_curve').value)
         self.manual_assisted_gamepad_timeout = float(self.get_parameter('manual_assisted.gamepad_timeout_sec').value)
+        self.manual_assisted_forward_axis_sign = float(self.get_parameter('manual_assisted.forward_axis_sign').value)
         self.manual_assisted_depth_target = self.manual_assisted_default_depth_target
         if self.manual_assisted_depth_limits_enabled:
             self.manual_assisted_depth_target = self._clamp(
@@ -443,6 +453,11 @@ class ControlNode(Node):
                     return SetParametersResult(successful=False, reason='max_thruster_force_newton must be > 0.0')
                 self.max_thruster_force_newton = float(param.value)
                 self.get_logger().info(f"Max thruster force set to: +/-{self.max_thruster_force_newton} N")
+            elif param.name == 'thruster_force_signs':
+                self.thruster_force_signs = np.array(param.value, dtype=np.float64)
+                self.get_logger().warn(
+                    f"Thruster force signs set to: {self.thruster_force_signs.tolist()}"
+                )
             elif param.name.startswith('manual_assisted.'):
                 result = self._set_manual_assisted_parameter(param)
                 if not result.successful:
@@ -560,6 +575,24 @@ class ControlNode(Node):
                     return SetParametersResult(
                         successful=False,
                         reason='max_thruster_force_newton must be > 0.0'
+                    )
+            elif param.name == 'thruster_force_signs':
+                try:
+                    signs = [float(value) for value in param.value]
+                except (TypeError, ValueError):
+                    return SetParametersResult(
+                        successful=False,
+                        reason='thruster_force_signs must contain 8 numeric values'
+                    )
+                if len(signs) != 8:
+                    return SetParametersResult(
+                        successful=False,
+                        reason='thruster_force_signs must contain 8 values'
+                    )
+                if any(sign not in (-1.0, 1.0) for sign in signs):
+                    return SetParametersResult(
+                        successful=False,
+                        reason='thruster_force_signs values must be -1.0 or 1.0'
                     )
             elif param.name.startswith('manual_assisted.'):
                 result = self._validate_manual_assisted_parameter(param)
@@ -911,6 +944,7 @@ class ControlNode(Node):
                 -self.max_thruster_force_newton,
                 self.max_thruster_force_newton
             )
+            thrusters_force = thrusters_force * self.thruster_force_signs
 
             if self.publish_lqr_dynamics_debug:
                 # Predicted accelerations from current thruster command in NED/FRD dynamics.
@@ -1096,7 +1130,7 @@ class ControlNode(Node):
             if self._has_recent_playback_target():
                 return
             self._manual_assisted_gamepad_update(
-                forward_cmd=-left_stick_y,
+                forward_cmd=self.manual_assisted_forward_axis_sign * left_stick_y,
                 yaw_cmd=left_stick_x,
                 vertical_cmd=-triggers_axis,
                 roll_cmd=0.0,
@@ -1310,6 +1344,10 @@ class ControlNode(Node):
             if value <= 0.0:
                 return SetParametersResult(successful=False, reason='manual_assisted.gamepad_timeout_sec must be > 0.0')
             self.manual_assisted_gamepad_timeout = value
+        elif param.name == 'manual_assisted.forward_axis_sign':
+            if value not in (-1.0, 1.0):
+                return SetParametersResult(successful=False, reason='manual_assisted.forward_axis_sign must be -1.0 or 1.0')
+            self.manual_assisted_forward_axis_sign = value
         else:
             return SetParametersResult(successful=False, reason=f'Unhandled parameter: {param.name}')
 
@@ -1351,6 +1389,13 @@ class ControlNode(Node):
             'manual_assisted.joystick_curve': (1.0, True, 'must be >= 1.0'),
             'manual_assisted.gamepad_timeout_sec': (0.0, False, 'must be > 0.0'),
         }
+        if param.name == 'manual_assisted.forward_axis_sign':
+            if value not in (-1.0, 1.0):
+                return SetParametersResult(
+                    successful=False,
+                    reason='manual_assisted.forward_axis_sign must be -1.0 or 1.0'
+                )
+            return SetParametersResult(successful=True)
         if param.name in (
             'manual_assisted.default_depth_target',
             'manual_assisted.min_depth_target',

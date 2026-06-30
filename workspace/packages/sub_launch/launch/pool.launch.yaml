@@ -45,6 +45,8 @@ launch:
         - from: "$(find-pkg-share sub_control)/config/params.yaml"
         - name: "control_mode"
           value: "$(var control_mode)"
+        - name: "manual_assisted.forward_axis_sign"
+          value: 1.0
 
   # TF tree
   - node:
@@ -64,6 +66,16 @@ launch:
       output: "screen"
       param:
         - from: "$(var ekf_config_file)"
+
+  # Physical IMU driver. The no-mag EKF still needs /vectornav/imu for
+  # roll/pitch and angular rates; Unity publishes this topic itself.
+  - node:
+      pkg: "vectornav"
+      exec: "vectornav"
+      name: "vectornav"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share vectornav)/config/vectornav.yaml"
 
   # Hardware
   - node:

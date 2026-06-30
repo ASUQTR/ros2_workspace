@@ -159,11 +159,11 @@ This starts:
 * `playback_node`;
 * `camera_dashboard_server` on port `6969`, with physical cameras disabled.
 
-Use `manual_assisted_nomag_pool.launch.yaml` for real-sub pool tests with the
+Use `pool.launch.yaml` for real-sub pool tests with the
 current no-magnetometer sensor-fusion setup:
 
 ```bash
-ros2 launch sub_launch manual_assisted_nomag_pool.launch.yaml
+ros2 launch sub_launch pool.launch.yaml
 ```
 
 This starts:
@@ -191,13 +191,13 @@ path aligned with the team's YAML launch convention.
 The default camera devices are indices `0` and `4`. Override them when needed:
 
 ```bash
-ros2 launch sub_launch manual_assisted_nomag_pool.launch.yaml camera_1:=0 camera_2:=2
+ros2 launch sub_launch pool.launch.yaml camera_1:=0 camera_2:=2
 ```
 
 To save one JPEG every five frames from both streams:
 
 ```bash
-ros2 launch sub_launch manual_assisted_nomag_pool.launch.yaml \
+ros2 launch sub_launch pool.launch.yaml \
   save_video:=true label:=pool-test-01
 ```
 
