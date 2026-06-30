@@ -191,6 +191,7 @@ class ControlNode(Node):
         self.r_values = np.array(DEFAULT_R, dtype=np.float64)
         self.lqr_profile_transition_sec = DEFAULT_LQR_PROFILE_TRANSITION_SEC
         self.lqr_profile_transition = None
+        self._syncing_lqr_matrix_params = False
 
         # Load initial parameters
         mode_str = self.get_parameter('control_mode').value.lower()
@@ -372,11 +373,18 @@ class ControlNode(Node):
         if not validation_result.successful:
             return validation_result
 
+        transition_param = next(
+            (param for param in params if param.name == 'lqr_profile_transition_sec'),
+            None
+        )
+        if transition_param is not None:
+            self.lqr_profile_transition_sec = max(0.0, float(transition_param.value))
+
         matrix_params = {
             param.name: param for param in params
             if param.name in ('state_cost_matrix', 'thruster_cost_matrix')
         }
-        if matrix_params:
+        if matrix_params and not self._syncing_lqr_matrix_params:
             q_values = matrix_params.get(
                 'state_cost_matrix',
                 Parameter('state_cost_matrix', value=np.diag(self.q_matrix).tolist())
@@ -390,9 +398,7 @@ class ControlNode(Node):
             matrix_error = self._validate_cost_matrices(q_values, r_values)
             if matrix_error:
                 return SetParametersResult(successful=False, reason=matrix_error)
-            self.lqr_profile_transition = None
-            self.update_q_matrix(q_values)
-            self.update_r_matrix(r_values)
+            self._start_lqr_profile_transition(q_values, r_values, 'custom')
 
         for param in params:
             if param.name in matrix_params:
@@ -702,6 +708,15 @@ class ControlNode(Node):
             self._last_mode_for_transition = self._current_mode
         self.get_logger().info(f"SUB Control mode set as: {self._current_mode.name}")
         return True
+
+    def _sync_lqr_matrix_parameter(self, name, values):
+        if self._syncing_lqr_matrix_params:
+            return
+        self._syncing_lqr_matrix_params = True
+        try:
+            self.set_parameters([Parameter(name, value=list(values))])
+        finally:
+            self._syncing_lqr_matrix_params = False
     
     def update_q_matrix(self, q_list):
         """
@@ -717,6 +732,7 @@ class ControlNode(Node):
             if isinstance(q_list, (list, tuple)) and len(q_list) == 12:
                 self.q_values = np.array(q_list, dtype=np.float64)
                 self.q_matrix = np.diag(self.q_values).astype(np.float64)
+                self._sync_lqr_matrix_parameter('state_cost_matrix', self.q_values.tolist())
                 return SetParametersResult(successful=True)
             else:
                 raise ValueError("Q matrix parameter must be a list of 12 elements")
@@ -741,6 +757,7 @@ class ControlNode(Node):
                 # Math optimization: K = R^-1 * B^T * X. We pre-compute R^-1 here so we 
                 # don't waste CPU cycles inverting the matrix during the hot control loop.
                 self.inv_r_matrix = np.linalg.inv(self.r_matrix)
+                self._sync_lqr_matrix_parameter('thruster_cost_matrix', self.r_values.tolist())
                 return SetParametersResult(successful=True)
             else:
                 raise ValueError("R matrix parameter must be a list of 8 elements")

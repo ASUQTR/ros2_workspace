@@ -2104,6 +2104,7 @@
     function applyMatrices() {
       const qValues = qInputs.map((input) => Number(input.value));
       const rValues = rInputs.map((input) => Number(input.value));
+      const transitionSec = Math.max(0, Number(el.profileTransitionSec.value || 0));
       if (
         !qValues.every((value) => Number.isFinite(value) && value >= 0)
         || !rValues.every((value) => Number.isFinite(value) && value > 0)
@@ -2118,18 +2119,19 @@
         type: "rcl_interfaces/srv/SetParametersAtomically",
         args: {
           parameters: [
+            doubleParameter("lqr_profile_transition_sec", transitionSec),
             doubleArrayParameter("state_cost_matrix", qValues),
             doubleArrayParameter("thruster_cost_matrix", rValues)
           ]
         }
       });
-      el.controlSettingsStatus.textContent = "Application atomique Q/R...";
+      el.controlSettingsStatus.textContent = "Transition Q/R sur " + fixed(transitionSec, 1) + " s...";
     }
 
     function handleMatrixResult(response) {
       const result = response.values && response.values.result;
       const failed = !result || !result.successful;
-      el.controlSettingsStatus.textContent = failed ? "Q/R refusées" : "Q/R appliquées";
+      el.controlSettingsStatus.textContent = failed ? "Q/R refusées" : "Transition Q/R démarrée";
       if (!failed) {
         matrixDirty = false;
         requestControlParameters(true);
