@@ -1169,6 +1169,21 @@
       <section class="panel tab-hidden" data-dashboard-tab="debug">
         <div class="panel-header">
           <div>
+            <h2 class="panel-title">LQR / Q-R</h2>
+            <p class="panel-kicker">Paramètres actifs dans /control_node</p>
+          </div>
+        </div>
+        <div class="panel-body telemetry-grid">
+          <div class="metric"><div class="metric-label">Profil courant</div><div id="debugLqrProfile" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Transition</div><div id="debugLqrTransition" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Synchronisation Q/R</div><div id="debugLqrMatrixMatch" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Delta max</div><div id="debugLqrMatrixDelta" class="telemetry-value">-</div></div>
+        </div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="debug">
+        <div class="panel-header">
+          <div>
             <h2 class="panel-title">Commandes thrusters</h2>
             <p class="panel-kicker">/thruster_cmd, efforts en N</p>
           </div>
@@ -1386,6 +1401,10 @@
       debugHorizontalError: document.getElementById("debugHorizontalError"),
       debugDepthError: document.getElementById("debugDepthError"),
       debugYawError: document.getElementById("debugYawError"),
+      debugLqrProfile: document.getElementById("debugLqrProfile"),
+      debugLqrTransition: document.getElementById("debugLqrTransition"),
+      debugLqrMatrixMatch: document.getElementById("debugLqrMatrixMatch"),
+      debugLqrMatrixDelta: document.getElementById("debugLqrMatrixDelta"),
       debugThrusterGrid: document.getElementById("debugThrusterGrid"),
       debugThrusterMax: document.getElementById("debugThrusterMax"),
       depthLimitsEnabled: document.getElementById("depthLimitsEnabled"),
@@ -1411,6 +1430,14 @@
     const qInputs = [];
     const rInputs = [];
     const thrusterDebugValues = [];
+    const latestLqrParameters = {
+      profile: "-",
+      transitionSec: 0,
+      qValues: [],
+      rValues: [],
+      profileQ: {},
+      profileR: {}
+    };
     let matrixDirty = false;
 
     function isMatrixInputFocused() {
@@ -2002,15 +2029,50 @@
             "lqr_profile",
             "lqr_profile_transition_sec",
             "lqr_profiles.forward_tuned",
-            "lqr_profiles.turning_tuned"
+            "lqr_profiles.turning_tuned",
+            "lqr_profiles.standstill_q",
+            "lqr_profiles.standstill_r",
+            "lqr_profiles.forward_q",
+            "lqr_profiles.forward_r",
+            "lqr_profiles.turning_q",
+            "lqr_profiles.turning_r"
           ]
         }
       });
     }
 
+    function maxAbsDelta(activeValues, targetValues) {
+      if (!activeValues || !targetValues || activeValues.length !== targetValues.length) return Infinity;
+      let maxDelta = 0;
+      activeValues.forEach((value, index) => {
+        maxDelta = Math.max(maxDelta, Math.abs(Number(value || 0) - Number(targetValues[index] || 0)));
+      });
+      return maxDelta;
+    }
+
+    function updateLqrDebugPanel() {
+      const profile = latestLqrParameters.profile || "-";
+      const qTarget = latestLqrParameters.profileQ[profile] || [];
+      const rTarget = latestLqrParameters.profileR[profile] || [];
+      const qDelta = maxAbsDelta(latestLqrParameters.qValues, qTarget);
+      const rDelta = maxAbsDelta(latestLqrParameters.rValues, rTarget);
+      const hasProfileMatrices = Number.isFinite(qDelta) && Number.isFinite(rDelta);
+      const synced = hasProfileMatrices && qDelta <= 1e-3 && rDelta <= 1e-6;
+
+      el.debugLqrProfile.textContent = lqrProfileLabel(profile);
+      el.debugLqrTransition.textContent = fixed(latestLqrParameters.transitionSec || 0, 1) + " s";
+      el.debugLqrMatrixMatch.textContent = synced
+        ? "OK - Q/R = profil"
+        : (hasProfileMatrices ? "Transition ou mismatch" : "Profil incomplet");
+      el.debugLqrMatrixMatch.style.color = synced ? "var(--green)" : "var(--amber)";
+      el.debugLqrMatrixDelta.textContent = hasProfileMatrices
+        ? "Q " + fixed(qDelta, 4) + " | R " + fixed(rDelta, 6)
+        : "-";
+    }
+
     function handleControlParameters(response) {
       const values = response.values && response.values.values;
-      if (!values || values.length < 6) return;
+      if (!values || values.length < 12) return;
       const qValues = values[0].double_array_value || [];
       const rValues = values[1].double_array_value || [];
       const force = String(response.id || "").startsWith("control-settings-force-");
@@ -2021,8 +2083,19 @@
         matrixDirty = false;
       }
       const profile = values[2].string_value || "standstill";
+      latestLqrParameters.profile = profile;
+      latestLqrParameters.transitionSec = Number(values[3].double_value || 0);
+      latestLqrParameters.qValues = qValues.slice();
+      latestLqrParameters.rValues = rValues.slice();
+      latestLqrParameters.profileQ.standstill = (values[6].double_array_value || []).slice();
+      latestLqrParameters.profileR.standstill = (values[7].double_array_value || []).slice();
+      latestLqrParameters.profileQ.forward = (values[8].double_array_value || []).slice();
+      latestLqrParameters.profileR.forward = (values[9].double_array_value || []).slice();
+      latestLqrParameters.profileQ.turning = (values[10].double_array_value || []).slice();
+      latestLqrParameters.profileR.turning = (values[11].double_array_value || []).slice();
       el.profileTransitionSec.value = Number(values[3].double_value || 0).toFixed(1);
       updateProfileButtons(profile);
+      updateLqrDebugPanel();
       el.controlSettingsStatus.textContent = canSyncMatrices
         ? "Paramètres synchronisés"
         : "Édition Q/R conservée";
