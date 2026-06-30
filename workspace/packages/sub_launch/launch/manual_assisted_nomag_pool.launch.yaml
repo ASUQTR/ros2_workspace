@@ -98,14 +98,6 @@ launch:
       param:
         - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
 
-  - node:
-      pkg: "vectornav"
-      exec: "vectornav"
-      name: "vectornav"
-      output: "screen"
-      param:
-        - from: "$(find-pkg-share vectornav)/config/vectornav.yaml"
-
   # ROSBridge for the browser dashboard.
   - node:
       pkg: "rosbridge_server"
