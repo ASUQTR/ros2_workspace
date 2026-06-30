@@ -199,8 +199,8 @@ class SonarNode(Node):
 
             if msg is None:
                 self.get_logger().error(f'transmitAngle failed at {angle_deg}°')
-                ranges.append(LaserEcho(ranges=[0.0]))
-                intensities.append(LaserEcho(ranges=[0.0]))
+                ranges.append(LaserEcho(echoes=[0.0]))
+                intensities.append(LaserEcho(echoes=[0.0]))
                 continue
 
             idx, strength = self.estimate_wall_distance(msg.msg_data)
