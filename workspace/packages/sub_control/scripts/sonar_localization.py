@@ -167,6 +167,7 @@ class SonarLocalizationNode(Node):
 
         try:
             x, y, yaw_rad, pos_variance, yaw_variance = self._scan_all_walls()
+            self.get_logger().info(f"{x}, {y}, {yaw_rad}")
         except Exception as exc:
             self.get_logger().error(f'Scan pipeline error: {exc}')
             response.success = False
@@ -290,6 +291,8 @@ class SonarLocalizationNode(Node):
             Angle of the wall's inward normal when AUV yaw=0; equals
             (scan_center_deg + 180) % 360.
         """
+        print(scan_center_deg)
+
         # ---- Step 1: collect point cloud ----
         polar_points = self._scan_wall_sector(scan_center_deg)
         if len(polar_points) < self.min_points_per_wall:
@@ -413,6 +416,7 @@ class SonarLocalizationNode(Node):
             stop_angle=stop_deg,
             desired_range=int(self.sonar_max_range),
         )
+
         future = self.sonar_client.call_async(req)
 
         # Busy-wait is safe here because this method runs in a worker thread

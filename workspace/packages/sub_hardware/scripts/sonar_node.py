@@ -203,12 +203,12 @@ class SonarNode(Node):
                 intensities.append(LaserEcho(ranges=[0.0]))
                 continue
 
-            idx, strength = self.estimate_wall_distance(msg.data)
+            idx, strength = self.estimate_wall_distance(msg.msg_data)
             distance = self.sample_to_distance(idx, SAMPLE_PERIOD)
 
             # BUG FIX: MultiEchoLaserScan.intensities expects LaserEcho[], not float[].
-            ranges.append(LaserEcho(ranges=[distance]))
-            intensities.append(LaserEcho(ranges=[float(strength)]))
+            ranges.append(LaserEcho(echoes=[distance]))
+            intensities.append(LaserEcho(echoes=[float(strength)]))
 
             self.rate.sleep()
 
