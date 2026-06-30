@@ -199,6 +199,7 @@ class ControlNode(Node):
         self.update_r_matrix(self.get_parameter('thruster_cost_matrix').value)
         self.lqr_profile = str(self.get_parameter('lqr_profile').value)
         self.lqr_profile_transition_sec = float(self.get_parameter('lqr_profile_transition_sec').value)
+        self._apply_initial_lqr_profile()
         self.publish_lqr_debug_angles = bool(self.get_parameter('publish_lqr_debug_angles').value)
         self.publish_lqr_dynamics_debug = bool(self.get_parameter('publish_lqr_dynamics_debug').value)
         self.debug_invert_roll = bool(self.get_parameter('debug_invert_roll').value)
@@ -578,6 +579,25 @@ class ControlNode(Node):
         if any(not math.isfinite(float(value)) or float(value) <= 0.0 for value in r_values):
             return 'thruster_cost_matrix values must be finite and > 0'
         return ''
+
+    def _apply_initial_lqr_profile(self):
+        """Apply the startup profile immediately so the active Q/R match lqr_profile."""
+        profile_name = str(self.lqr_profile).strip().lower()
+        validation_result = self._validate_lqr_profile(profile_name)
+        if not validation_result.successful:
+            self.get_logger().warn(
+                f"Startup LQR profile '{self.lqr_profile}' rejected: "
+                f"{validation_result.reason}. Keeping state_cost_matrix/thruster_cost_matrix."
+            )
+            return
+
+        q_values = list(self.get_parameter(f'lqr_profiles.{profile_name}_q').value)
+        r_values = list(self.get_parameter(f'lqr_profiles.{profile_name}_r').value)
+        self.lqr_profile = profile_name
+        self.lqr_profile_transition = None
+        self.update_q_matrix(q_values)
+        self.update_r_matrix(r_values)
+        self.get_logger().info(f"Startup LQR profile applied: {profile_name}")
 
     def _set_lqr_profile(self, profile_name):
         validation_result = self._validate_lqr_profile(profile_name)
