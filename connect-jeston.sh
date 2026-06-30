@@ -1,9 +1,1 @@
 docker exec -it ros2-elliot /bin/bash
-
-
-
-
-
-
-
-
