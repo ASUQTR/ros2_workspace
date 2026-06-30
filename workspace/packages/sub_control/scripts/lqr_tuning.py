@@ -119,13 +119,6 @@ class LQRTuning(Node):
         msg.w = 1.0
         pub.publish(msg)
 
-    def _apply_temp_yaw_offset(self, yaw_rad: float) -> float:
-        """Temporary yaw offset to match control_node debug convention."""
-        yaw_offset_deg = 58.3
-        yaw_offset_rad = math.radians(yaw_offset_deg)
-        yaw_corrected = yaw_rad - yaw_offset_rad
-        return (yaw_corrected + math.pi) % (2 * math.pi) - math.pi
-
     def imu_callback(self, msg: Imu):
         quat_ros = [
             msg.orientation.x,
@@ -151,7 +144,6 @@ class LQRTuning(Node):
         self.R_imu_ned = R.from_matrix(R_ned_frd_mat)
 
         yaw_ned, pitch_ned, roll_ned = self.R_imu_ned.as_euler('zyx', degrees=False)
-        yaw_ned = self._apply_temp_yaw_offset(yaw_ned)
 
         self.imu_state[3] = roll_ned
         self.imu_state[4] = pitch_ned
@@ -172,7 +164,6 @@ class LQRTuning(Node):
         self.R_filtered_ned = R.from_matrix(R_ned_frd_mat)
 
         yaw_ned, pitch_ned, roll_ned = self.R_filtered_ned.as_euler('zyx', degrees=False)
-        yaw_ned = self._apply_temp_yaw_offset(yaw_ned)
 
         self.filtered_state[3] = roll_ned
         self.filtered_state[4] = pitch_ned
