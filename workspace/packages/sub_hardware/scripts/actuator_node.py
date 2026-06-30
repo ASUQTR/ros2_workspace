@@ -94,34 +94,54 @@ class T200Thruster(ContinuousServo):
     # Measured thrust in Newtons. 
     # Note: Array must be in monotonically increasing order for np.interp to function.
     known_forces_n = np.array([
-            -40.22, # Max Reverse (Asymmetric, weaker than forward)
-            -27.47, 
-            -14.71, 
-            -5.89, 
-            0.0,    # Deadband start
-            0.0,    # Center/Stopped
-            0.0,    # Deadband end
-            7.85, 
-            19.62, 
-            34.33, 
-            51.50   # Max Forward
+-38.58,  # 1100 us — Max Reverse
+            -32.30,  # 1150 us
+            -25.71,  # 1200 us
+            -18.83,  # 1250 us
+            -13.63,  # 1300 us
+             -8.49,  # 1350 us
+             -4.51,  # 1400 us
+             -1.11,  # 1450 us
+             -0.40,  # 1464 us — last non-zero before deadband
+              0.0,   # 1468 us — deadband lower boundary
+              0.0,   # 1500 us — center / stopped
+              0.0,   # 1532 us — deadband upper boundary
+              0.42,  # 1536 us — first non-zero after deadband
+              1.13,  # 1548 us
+              5.65,  # 1600 us
+             10.88,  # 1650 us
+             17.19,  # 1700 us
+             24.38,  # 1750 us
+             32.50,  # 1800 us
+             41.56,  # 1850 us
+             49.71,  # 1900 us — Max Forward       
         ])
 
     # Corresponding ContinuousServo API commands [-1.0 to 1.0]
     # These represent the exact PWM values (from 1100us to 1900us) required to generate 
     # the corresponding force in the known_forces_n array.
     known_api_cmds = np.array([
-            -1.0,    # 1100 us
-            -0.75,   # 1200 us
-            -0.50,   # 1300 us
-            -0.25,   # 1400 us
-            -0.0625, # 1475 us (Deadband boundary - lower)
-            0.0,     # 1500 us (Stopped)
-            0.0625,  # 1525 us (Deadband boundary - upper)
-            0.25,    # 1600 us
-            0.50,    # 1700 us
-            0.75,    # 1800 us
-            1.0      # 1900 us
+     -1.000,  # 1100 us
+            -0.875,  # 1150 us
+            -0.750,  # 1200 us
+            -0.625,  # 1250 us
+            -0.500,  # 1300 us
+            -0.375,  # 1350 us
+            -0.250,  # 1400 us
+            -0.125,  # 1450 us
+            -0.090,  # 1464 us
+            -0.080,  # 1468 us — deadband lower
+             0.000,  # 1500 us — stopped
+             0.080,  # 1532 us — deadband upper
+             0.090,  # 1536 us
+             0.120,  # 1548 us
+             0.250,  # 1600 us
+             0.375,  # 1650 us
+             0.500,  # 1700 us
+             0.625,  # 1750 us
+             0.750,  # 1800 us
+             0.875,  # 1850 us
+             1.000,  # 1900 us
         ])
 
     def __init__(self, pwm_out):
