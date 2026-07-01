@@ -140,13 +140,6 @@ namespace vectornav {
     double averageTimeDifference_{0};
     bool adjustROSTimeStamp_{false};
 
-    // First-order HPF state for yaw rate bias rejection
-    double hpf_yaw_cutoff_hz_{0.01};
-    double hpf_yaw_prev_in_{0.0};
-    double hpf_yaw_prev_out_{0.0};
-    bool hpf_yaw_initialized_{false};
-    rclcpp::Time hpf_yaw_prev_time_{0, 0, RCL_ROS_TIME};
-
     // Subscriptions
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr sub_vel_aiding_;
 

@@ -174,10 +174,6 @@ Vectornav::Vectornav(const rclcpp::NodeOptions & options) : Node("vectornav", op
   // Message Header
   declare_parameter<std::string>("frame_id", "vectornav");
 
-  // First-order HPF on yaw rate to reject gyro bias drift
-  declare_parameter<double>("yaw_rate_hpf_cutoff_hz", 0.01);
-  hpf_yaw_cutoff_hz_ = get_parameter("yaw_rate_hpf_cutoff_hz").as_double();
-
   // Composite Data Publisher
   //pub_common_ =
   //  this->create_publisher<vectornav_msgs::msg::CommonGroup>("vectornav/raw/common", 10);
@@ -914,30 +910,6 @@ imu_msg.linear_acceleration_covariance = {
     0.0, 0.36, 0.0,
     0.0, 0.0, 0.36
 };
-  // First-order HPF on yaw rate (z-axis in FLU/ENU) to reject gyro bias drift.
-  // y[k] = alpha * (y[k-1] + x[k] - x[k-1]),  alpha = tau/(tau+dt),  tau = 1/(2*pi*fc)
-  {
-    const rclcpp::Time now(imu_msg.header.stamp);
-    if (!node->hpf_yaw_initialized_) {
-      node->hpf_yaw_prev_in_ = imu_msg.angular_velocity.z;
-      node->hpf_yaw_prev_out_ = 0.0;
-      node->hpf_yaw_prev_time_ = now;
-      node->hpf_yaw_initialized_ = true;
-    } else {
-      const double dt = (now - node->hpf_yaw_prev_time_).seconds();
-      if (dt > 0.0 && dt < 1.0) {
-        const double tau = 1.0 / (2.0 * M_PI * node->hpf_yaw_cutoff_hz_);
-        const double alpha = tau / (tau + dt);
-        const double filtered =
-          alpha * (node->hpf_yaw_prev_out_ + imu_msg.angular_velocity.z - node->hpf_yaw_prev_in_);
-        node->hpf_yaw_prev_in_ = imu_msg.angular_velocity.z;
-        node->hpf_yaw_prev_out_ = filtered;
-        node->hpf_yaw_prev_time_ = now;
-        imu_msg.angular_velocity.z = filtered;
-      }
-    }
-  }
-
   // Publish
   node->imu_pub_->publish(imu_msg);
 
