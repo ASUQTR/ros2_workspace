@@ -35,7 +35,8 @@ COPY ./src ./src
 COPY requirements_xavier.txt /workspace/
 
 # 5. Install python dependencies & let rosdep read the copied package.xml files and install system packages
-RUN pip3 install -r requirements_xavier.txt
+RUN pip3 install -r requirements_xavier.txt && \
+    pip3 install --user bluerobotics-ping --upgrade
 RUN apt-get update && \
     rosdep install -i -r --from-paths src --rosdistro humble -y && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
