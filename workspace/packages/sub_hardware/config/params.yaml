@@ -11,6 +11,8 @@ actuator_node:
     # Allows to disable watchdog that set thrusters to a safe value. This must always be enabled 
     # in normal operation for safety, unless you have a specific testing usecase
     enable_thrusters_watchdog: true
+    # If /thruster_cmd stops arriving, force all thrusters to neutral after this delay.
+    thrusters_watchdog_timeout_sec: 0.5
 
 dvl_node:
   ros__parameters:

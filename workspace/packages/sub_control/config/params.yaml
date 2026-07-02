@@ -1,7 +1,7 @@
 # config/control_params.yaml
 control_node:
   ros__parameters:
-    # Execution Mode: 'behavior', 'lqr_tuning', 'manual', or 'manual_assisted'
+    # Execution Mode: 'behavior', 'lqr_tuning', 'manual', 'manual_assisted', or 'open_loop'
     control_mode: "lqr_tuning"
     
     # Q MATRIX (State Error Cost): Penalizes being away from the target.
@@ -92,3 +92,11 @@ control_node:
       # Diagnostic joystick sign. The dashboard publishes +1.0 when the left
       # stick is pushed forward; keep this at +1.0 unless isolating input issues.
       forward_axis_sign: 1.0
+
+    # Diagnostic open-loop mode:
+    # joystick -> thruster allocation -> bounded Newton commands.
+    # This bypasses the LQR and odometry so motor mapping can be tested directly.
+    open_loop:
+      max_thruster_force_newton: 10.0
+      joystick_curve: 1.2
+      gamepad_timeout_sec: 0.35

@@ -239,6 +239,7 @@ class ActuatorNode(Node):
         self.declare_parameter('flat_thruster_gain_primary', 0.2)
         self.declare_parameter('flat_thruster_gain_secondary', 0.1)
         self.declare_parameter('enable_thrusters_watchdog', True)
+        self.declare_parameter('thrusters_watchdog_timeout_sec', 0.5)
 
         pca_ref_clk_speed = self.get_parameter('pca_ref_clk_speed').value
         self.thruster_throttle_offset = self.get_parameter('thruster_throttle_offset').value
@@ -246,6 +247,9 @@ class ActuatorNode(Node):
         self.flat_thruster_gain_primary = float(self.get_parameter('flat_thruster_gain_primary').value)
         self.flat_thruster_gain_secondary = float(self.get_parameter('flat_thruster_gain_secondary').value)
         self.thrusters_watchdog_enabled = self.get_parameter('enable_thrusters_watchdog').value
+        self.thrusters_watchdog_timeout = Duration(
+            seconds=float(self.get_parameter('thrusters_watchdog_timeout_sec').value)
+        )
 
         # Bind dynamic ROS2 reconfigure callback to allow live tuning
         self.add_on_set_parameters_callback(self.parameter_callback)
@@ -307,10 +311,9 @@ class ActuatorNode(Node):
             Bool, 'kill_switch', self.kill_switch_callback, latched_qos, callback_group=self.i2c_cb_group)
 
         # --- Thruster Watchdog Timer for safety---
-        # Set a timout of 1 sec for thruster commands. If timed out, kill thrusters.
+        # If thruster commands stop arriving, force all thrusters to neutral.
         # Since this callback can operate thrusters, i needs to be in the i2c mutex callback group
         # Set it using seconds for human readability
-        self.thrusters_watchdog_timeout = Duration(seconds=1.0)        
         self.last_watchdog_kick_time = self.get_clock().now()
         self.thrusters_watchdog_timer = self.create_timer(
             0.05, # Check for thruster cmd timout at 20hz frequency
@@ -356,6 +359,19 @@ class ActuatorNode(Node):
                 else:
                     successful = False
                     reason = "Type rejected: use_flat_thruster_mapping must be a bool"
+            elif param.name == 'thrusters_watchdog_timeout_sec':
+                if param.type_ == Parameter.Type.DOUBLE:
+                    if 0.1 <= param.value <= 5.0:
+                        self.thrusters_watchdog_timeout = Duration(seconds=float(param.value))
+                        self.get_logger().info(
+                            f"Thruster watchdog timeout set to: {float(param.value):.2f} s"
+                        )
+                    else:
+                        successful = False
+                        reason = "Timeout rejected: thrusters_watchdog_timeout_sec must be between 0.1 and 5.0"
+                else:
+                    successful = False
+                    reason = "Type rejected: thrusters_watchdog_timeout_sec must be a float (double)"
             elif param.name == 'flat_thruster_gain_primary':
                 if param.type_ == Parameter.Type.DOUBLE:
                     if 0.0 <= param.value <= 1.0:

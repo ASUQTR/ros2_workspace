@@ -443,6 +443,49 @@
       font-weight: 750;
     }
 
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(260px, 1fr));
+      gap: 10px;
+    }
+
+    .chart-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0a0e12;
+      overflow: hidden;
+    }
+
+    .chart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    .chart-header span:last-child {
+      color: var(--quiet);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-weight: 680;
+    }
+
+    .chart-card canvas {
+      display: block;
+      width: 100%;
+      height: 180px;
+    }
+
+    .debug-action-row {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
     .event-log {
       display: grid;
       gap: 6px;
@@ -884,6 +927,10 @@
             <button id="armBtn" class="primary" type="button">Start / Arm</button>
             <button id="stopBtn" class="danger" type="button">Select / Stop</button>
           </div>
+          <div class="segmented">
+            <button id="manualAssistedModeBtn" class="active" type="button">Carotte LQR</button>
+            <button id="openLoopModeBtn" type="button">Boucle ouverte</button>
+          </div>
           <div class="metric">
             <div class="metric-label">Limites profondeur NED (m, positif vers le bas)</div>
             <div class="field-grid" style="margin-top: 8px;">
@@ -912,7 +959,7 @@
           <button id="recordBtn" class="recording" type="button">Record</button>
           <div class="field">
             <label for="playbackPath">Trajet JSON</label>
-            <input id="playbackPath" type="text" value="/workspace/recordings/playback/waypoints_latest.json" spellcheck="false">
+            <input id="playbackPath" type="text" value="/tmp/waypoints_latest.json" spellcheck="false">
           </div>
           <div class="button-row three">
             <button id="loadPlaybackBtn" class="ghost" type="button">Load</button>
@@ -933,7 +980,7 @@
               <div id="lqrProfileMetric" class="metric-value">Standstill</div>
             </div>
           </div>
-          <div class="tiny">Start arme MANUAL_ASSISTED. Select active l'arret logiciel. A/Y/B changent Standstill/Forward/Turning.</div>
+          <div class="tiny">Start arme le mode choisi. Select active l'arret logiciel. En carotte: A/Y/B changent Standstill/Forward/Forward + Turning. En boucle ouverte: stick gauche surge/sway, RT/LT heave, X/B roll, A/Y pitch, stick droit X yaw.</div>
         </div>
       </section>
 
@@ -1055,7 +1102,7 @@
           <div class="profile-map pilot-profile-map">
             <div id="pilotProfileStandstill" class="profile-chip active"><span>A</span>Standstill</div>
             <div id="pilotProfileForward" class="profile-chip"><span>Y</span>Forward</div>
-            <div id="pilotProfileTurning" class="profile-chip"><span>B</span>Turning</div>
+            <div id="pilotProfileTurning" class="profile-chip"><span>B</span>Forward + Turning</div>
           </div>
           <div class="pilot-layout">
             <div class="gamepad-visual" aria-label="Gamepad state">
@@ -1169,15 +1216,28 @@
       <section class="panel tab-hidden" data-dashboard-tab="debug">
         <div class="panel-header">
           <div>
-            <h2 class="panel-title">LQR / Q-R</h2>
-            <p class="panel-kicker">Paramètres actifs dans /control_node</p>
+            <h2 class="panel-title">Graphiques temps réel</h2>
+            <p class="panel-kicker">Historique local du navigateur</p>
           </div>
+          <button id="clearChartsBtn" class="ghost" type="button">Reset graphes</button>
         </div>
-        <div class="panel-body telemetry-grid">
-          <div class="metric"><div class="metric-label">Profil courant</div><div id="debugLqrProfile" class="telemetry-value">-</div></div>
-          <div class="metric"><div class="metric-label">Transition</div><div id="debugLqrTransition" class="telemetry-value">-</div></div>
-          <div class="metric"><div class="metric-label">Synchronisation Q/R</div><div id="debugLqrMatrixMatch" class="telemetry-value">-</div></div>
-          <div class="metric"><div class="metric-label">Delta max</div><div id="debugLqrMatrixDelta" class="telemetry-value">-</div></div>
+        <div class="panel-body chart-grid">
+          <article class="chart-card">
+            <div class="chart-header"><span>Yaw actuel / cible / erreur</span><span id="yawChartReadout">-</span></div>
+            <canvas id="yawChart" width="720" height="220"></canvas>
+          </article>
+          <article class="chart-card">
+            <div class="chart-header"><span>Profondeur actuelle / cible</span><span id="depthChartReadout">-</span></div>
+            <canvas id="depthChart" width="720" height="220"></canvas>
+          </article>
+          <article class="chart-card">
+            <div class="chart-header"><span>Vitesses angulaires</span><span id="angularRateChartReadout">-</span></div>
+            <canvas id="angularRateChart" width="720" height="220"></canvas>
+          </article>
+          <article class="chart-card">
+            <div class="chart-header"><span>Efforts thrusters min / max</span><span id="thrusterChartReadout">-</span></div>
+            <canvas id="thrusterChart" width="720" height="220"></canvas>
+          </article>
         </div>
       </section>
 
@@ -1246,7 +1306,7 @@
             <div class="segmented three" style="margin-top: 8px;">
               <button id="profileStandstillBtn" class="active" type="button">Standstill</button>
               <button id="profileForwardBtn" type="button">Forward</button>
-              <button id="profileTurningBtn" type="button">Turning</button>
+              <button id="profileTurningBtn" type="button">Forward + Turning</button>
             </div>
             <div class="matrix-grid" style="margin-top: 8px;">
               <div class="field">
@@ -1277,6 +1337,7 @@
   <script>
     const joyTopic = "/dashboard/gamepad";
     const debugTopic = "/debug/manual_assisted";
+    const openLoopDebugTopic = "/debug/open_loop_cmd";
     const playbackStatusTopic = "/playback/status";
     const rosoutTopic = "/rosout";
     const telemetryTopics = {
@@ -1302,7 +1363,8 @@
     let lastJoy = null;
     let lastJoyAt = 0;
     let manualAssistedDebug = null;
-    let selectedModeRequest = "Start envoye";
+    let openLoopDebug = null;
+    let selectedControlMode = "manual_assisted";
     let recordEnabled = false;
     let recordRequestPending = false;
     let playbackRequestPending = false;
@@ -1323,6 +1385,8 @@
     let depthParameterQueue = [];
     let physicalCamerasAvailable = false;
     let physicalCameraBase = "";
+    let lastChartOdomAt = 0;
+    let chartCaptureEnabled = false;
     const lastUnityFrameAt = { 1: 0, 2: 0 };
     const cameraSource = { 1: "offline", 2: "offline" };
     const telemetry = {
@@ -1351,6 +1415,8 @@
       gamepadName: document.getElementById("gamepadName"),
       debug: document.getElementById("debug"),
       modeMetric: document.getElementById("modeMetric"),
+      manualAssistedModeBtn: document.getElementById("manualAssistedModeBtn"),
+      openLoopModeBtn: document.getElementById("openLoopModeBtn"),
       lqrProfileMetric: document.getElementById("lqrProfileMetric"),
       pilotProfileStandstill: document.getElementById("pilotProfileStandstill"),
       pilotProfileForward: document.getElementById("pilotProfileForward"),
@@ -1401,12 +1467,16 @@
       debugHorizontalError: document.getElementById("debugHorizontalError"),
       debugDepthError: document.getElementById("debugDepthError"),
       debugYawError: document.getElementById("debugYawError"),
-      debugLqrProfile: document.getElementById("debugLqrProfile"),
-      debugLqrTransition: document.getElementById("debugLqrTransition"),
-      debugLqrMatrixMatch: document.getElementById("debugLqrMatrixMatch"),
-      debugLqrMatrixDelta: document.getElementById("debugLqrMatrixDelta"),
       debugThrusterGrid: document.getElementById("debugThrusterGrid"),
       debugThrusterMax: document.getElementById("debugThrusterMax"),
+      yawChart: document.getElementById("yawChart"),
+      depthChart: document.getElementById("depthChart"),
+      angularRateChart: document.getElementById("angularRateChart"),
+      thrusterChart: document.getElementById("thrusterChart"),
+      yawChartReadout: document.getElementById("yawChartReadout"),
+      depthChartReadout: document.getElementById("depthChartReadout"),
+      angularRateChartReadout: document.getElementById("angularRateChartReadout"),
+      thrusterChartReadout: document.getElementById("thrusterChartReadout"),
       depthLimitsEnabled: document.getElementById("depthLimitsEnabled"),
       depthBaseTarget: document.getElementById("depthBaseTarget"),
       depthMinTarget: document.getElementById("depthMinTarget"),
@@ -1430,24 +1500,13 @@
     const qInputs = [];
     const rInputs = [];
     const thrusterDebugValues = [];
-    const latestLqrParameters = {
-      profile: "-",
-      transitionSec: 0,
-      qValues: [],
-      rValues: [],
-      profileQ: {},
-      profileR: {}
+    const chartWindowMs = 180000;
+    const chartSamples = {
+      yaw: [],
+      depth: [],
+      angularRate: [],
+      thruster: []
     };
-    let matrixDirty = false;
-
-    function isMatrixInputFocused() {
-      return [...qInputs, ...rInputs].includes(document.activeElement);
-    }
-
-    function markMatrixDirty() {
-      matrixDirty = true;
-      el.controlSettingsStatus.textContent = "Q/R modifiées, non appliquées";
-    }
 
     function buildMatrixFields(container, labels, inputs) {
       labels.forEach((label, index) => {
@@ -1468,9 +1527,6 @@
 
     buildMatrixFields(el.qMatrixFields, qLabels, qInputs);
     buildMatrixFields(el.rMatrixFields, rLabels, rInputs);
-    [...qInputs, ...rInputs].forEach((input) => {
-      input.addEventListener("input", markMatrixDirty);
-    });
 
     rLabels.forEach((label) => {
       const metric = document.createElement("div");
@@ -1660,6 +1716,7 @@
       });
       if (advertised) addEvent("ok", "dashboard", "Publisher prêt: " + joyTopic);
       subscribe(debugTopic, "std_msgs/msg/Float64MultiArray", { throttleRate: 120 });
+      subscribe(openLoopDebugTopic, "std_msgs/msg/Float64MultiArray", { throttleRate: 120 });
       subscribe(
         unityCameraTopics.front,
         "sensor_msgs/msg/CompressedImage",
@@ -1729,6 +1786,8 @@
           const data = JSON.parse(event.data);
           if (data.topic === debugTopic) {
             manualAssistedDebug = data.msg;
+          } else if (data.topic === openLoopDebugTopic) {
+            openLoopDebug = data.msg;
           } else if (data.topic === unityCameraTopics.front) {
             displayUnityCameraFrame(1, data.msg);
           } else if (data.topic === unityCameraTopics.bottom) {
@@ -1741,6 +1800,7 @@
             const hadState = disablePwmReceived;
             disablePwmReceived = true;
             controlStopped = Boolean(data.msg && data.msg.data);
+            chartCaptureEnabled = !controlStopped;
             if (controlStopped && recordEnabled) {
               recordEnabled = false;
               recordRequestPending = false;
@@ -1790,6 +1850,7 @@
           } else if (data.op === "service_response" && data.service === "/control_node/set_parameters") {
             if (String(data.id || "").startsWith("depth-")) handleDepthParameterResult(data);
             if (String(data.id || "").startsWith("profile-")) handleProfileResult(data);
+            if (String(data.id || "").startsWith("control-mode-")) handleControlModeResult(data);
           } else if (data.op === "service_response" && data.service === "/control_node/set_parameters_atomically") {
             handleMatrixResult(data);
           } else if (data.op === "service_response" && data.service === "/playback_node/set_parameters") {
@@ -2016,10 +2077,10 @@
       el.controlSettingsStatus.textContent = failed ? "Erreur paramètres playback" : "Tolérances appliquées";
     }
 
-    function requestControlParameters(force = false) {
+    function requestControlParameters() {
       send({
         op: "call_service",
-        id: (force ? "control-settings-force-" : "control-settings-get-") + Date.now(),
+        id: "control-settings-get-" + Date.now(),
         service: "/control_node/get_parameters",
         type: "rcl_interfaces/srv/GetParameters",
         args: {
@@ -2030,81 +2091,38 @@
             "lqr_profile_transition_sec",
             "lqr_profiles.forward_tuned",
             "lqr_profiles.turning_tuned",
-            "lqr_profiles.standstill_q",
-            "lqr_profiles.standstill_r",
-            "lqr_profiles.forward_q",
-            "lqr_profiles.forward_r",
-            "lqr_profiles.turning_q",
-            "lqr_profiles.turning_r"
+            "control_mode"
           ]
         }
       });
     }
 
-    function maxAbsDelta(activeValues, targetValues) {
-      if (!activeValues || !targetValues || activeValues.length !== targetValues.length) return Infinity;
-      let maxDelta = 0;
-      activeValues.forEach((value, index) => {
-        maxDelta = Math.max(maxDelta, Math.abs(Number(value || 0) - Number(targetValues[index] || 0)));
-      });
-      return maxDelta;
-    }
-
-    function updateLqrDebugPanel() {
-      const profile = latestLqrParameters.profile || "-";
-      const qTarget = latestLqrParameters.profileQ[profile] || [];
-      const rTarget = latestLqrParameters.profileR[profile] || [];
-      const qDelta = maxAbsDelta(latestLqrParameters.qValues, qTarget);
-      const rDelta = maxAbsDelta(latestLqrParameters.rValues, rTarget);
-      const hasProfileMatrices = Number.isFinite(qDelta) && Number.isFinite(rDelta);
-      const synced = hasProfileMatrices && qDelta <= 1e-3 && rDelta <= 1e-6;
-
-      el.debugLqrProfile.textContent = lqrProfileLabel(profile);
-      el.debugLqrTransition.textContent = fixed(latestLqrParameters.transitionSec || 0, 1) + " s";
-      el.debugLqrMatrixMatch.textContent = synced
-        ? "OK - Q/R = profil"
-        : (hasProfileMatrices ? "Transition ou mismatch" : "Profil incomplet");
-      el.debugLqrMatrixMatch.style.color = synced ? "var(--green)" : "var(--amber)";
-      el.debugLqrMatrixDelta.textContent = hasProfileMatrices
-        ? "Q " + fixed(qDelta, 4) + " | R " + fixed(rDelta, 6)
-        : "-";
-    }
-
     function handleControlParameters(response) {
       const values = response.values && response.values.values;
-      if (!values || values.length < 12) return;
+      if (!values || values.length < 6) return;
       const qValues = values[0].double_array_value || [];
       const rValues = values[1].double_array_value || [];
-      const force = String(response.id || "").startsWith("control-settings-force-");
-      const canSyncMatrices = force || (!matrixDirty && !isMatrixInputFocused());
-      if (canSyncMatrices) {
-        qInputs.forEach((input, index) => { input.value = Number(qValues[index] || 0).toFixed(4); });
-        rInputs.forEach((input, index) => { input.value = Number(rValues[index] || 0).toFixed(4); });
-        matrixDirty = false;
-      }
+      qInputs.forEach((input, index) => { input.value = Number(qValues[index] || 0).toFixed(4); });
+      rInputs.forEach((input, index) => { input.value = Number(rValues[index] || 0).toFixed(4); });
       const profile = values[2].string_value || "standstill";
-      latestLqrParameters.profile = profile;
-      latestLqrParameters.transitionSec = Number(values[3].double_value || 0);
-      latestLqrParameters.qValues = qValues.slice();
-      latestLqrParameters.rValues = rValues.slice();
-      latestLqrParameters.profileQ.standstill = (values[6].double_array_value || []).slice();
-      latestLqrParameters.profileR.standstill = (values[7].double_array_value || []).slice();
-      latestLqrParameters.profileQ.forward = (values[8].double_array_value || []).slice();
-      latestLqrParameters.profileR.forward = (values[9].double_array_value || []).slice();
-      latestLqrParameters.profileQ.turning = (values[10].double_array_value || []).slice();
-      latestLqrParameters.profileR.turning = (values[11].double_array_value || []).slice();
       el.profileTransitionSec.value = Number(values[3].double_value || 0).toFixed(1);
       updateProfileButtons(profile);
-      updateLqrDebugPanel();
-      el.controlSettingsStatus.textContent = canSyncMatrices
-        ? "Paramètres synchronisés"
-        : "Édition Q/R conservée";
+      if (values[6] && values[6].string_value) {
+        const actualMode = values[6].string_value;
+        if (actualMode === "open_loop" || actualMode === "manual_assisted") {
+          selectedControlMode = actualMode;
+          updateControlModeButtons();
+          el.modeMetric.textContent = selectedControlMode === "open_loop" ? "Boucle ouverte" : "Carotte LQR";
+        } else {
+          el.modeMetric.textContent = actualMode || "-";
+        }
+      }
+      el.controlSettingsStatus.textContent = "Paramètres synchronisés";
     }
 
     function applyMatrices() {
       const qValues = qInputs.map((input) => Number(input.value));
       const rValues = rInputs.map((input) => Number(input.value));
-      const transitionSec = Math.max(0, Number(el.profileTransitionSec.value || 0));
       if (
         !qValues.every((value) => Number.isFinite(value) && value >= 0)
         || !rValues.every((value) => Number.isFinite(value) && value > 0)
@@ -2119,23 +2137,19 @@
         type: "rcl_interfaces/srv/SetParametersAtomically",
         args: {
           parameters: [
-            doubleParameter("lqr_profile_transition_sec", transitionSec),
             doubleArrayParameter("state_cost_matrix", qValues),
             doubleArrayParameter("thruster_cost_matrix", rValues)
           ]
         }
       });
-      el.controlSettingsStatus.textContent = "Transition Q/R sur " + fixed(transitionSec, 1) + " s...";
+      el.controlSettingsStatus.textContent = "Application atomique Q/R...";
     }
 
     function handleMatrixResult(response) {
       const result = response.values && response.values.result;
       const failed = !result || !result.successful;
-      el.controlSettingsStatus.textContent = failed ? "Q/R refusées" : "Transition Q/R démarrée";
-      if (!failed) {
-        matrixDirty = false;
-        requestControlParameters(true);
-      }
+      el.controlSettingsStatus.textContent = failed ? "Q/R refusées" : "Q/R appliquées";
+      if (!failed) requestControlParameters();
     }
 
     function selectProfile(profile) {
@@ -2159,7 +2173,7 @@
       const results = response.values && response.values.results;
       const failure = results && results.find((result) => !result.successful);
       el.profileStatus.textContent = failure ? failure.reason : "Profil appliqué";
-      if (!failure) requestControlParameters(true);
+      if (!failure) requestControlParameters();
     }
 
     function updateProfileButtons(profile) {
@@ -2174,7 +2188,7 @@
 
     function lqrProfileLabel(profile) {
       if (profile === "forward") return "Forward";
-      if (profile === "turning") return "Turning";
+      if (profile === "turning") return "Forward + Turning";
       return "Standstill";
     }
 
@@ -2206,6 +2220,7 @@
       const parameterValue = { type };
       if (type === 1) parameterValue.bool_value = Boolean(value);
       if (type === 3) parameterValue.double_value = Number(value);
+      if (type === 4) parameterValue.string_value = String(value);
       return send({
         op: "call_service",
         id: "depth-parameter-set-" + name + "-" + Date.now(),
@@ -2215,6 +2230,47 @@
           parameters: [{ name, value: parameterValue }]
         }
       });
+    }
+
+    function setControlMode(mode, armAfter = false) {
+      selectedControlMode = mode;
+      updateControlModeButtons();
+      const sent = send({
+        op: "call_service",
+        id: "control-mode-set-" + Date.now() + (armAfter ? "-arm" : ""),
+        service: "/control_node/set_parameters",
+        type: "rcl_interfaces/srv/SetParameters",
+        args: {
+          parameters: [stringParameter("control_mode", mode)]
+        }
+      });
+      el.modeMetric.textContent = mode === "open_loop" ? "Boucle ouverte" : "Carotte LQR";
+      if (sent && armAfter) {
+        setTimeout(() => sendSynthetic(7), 180);
+      }
+    }
+
+    function armSelectedMode() {
+      setControlMode(selectedControlMode, true);
+    }
+
+    function updateControlModeButtons() {
+      el.manualAssistedModeBtn.classList.toggle("active", selectedControlMode === "manual_assisted");
+      el.openLoopModeBtn.classList.toggle("active", selectedControlMode === "open_loop");
+    }
+
+    function handleControlModeResult(response) {
+      const results = response.values && response.values.results;
+      const failure = results && results.find((result) => !result.successful);
+      if (failure) {
+        addEvent("error", "mode", failure.reason || "Mode refuse");
+        return;
+      }
+      addEvent(
+        "info",
+        "mode",
+        selectedControlMode === "open_loop" ? "Boucle ouverte selectionnee" : "Carotte LQR selectionnee"
+      );
     }
 
     function applyDepthLimits() {
@@ -2307,7 +2363,7 @@
       const rightY = -(gp.axes[3] || 0);
       const ltAxis = triggerAxis(gp, 6);
       const rtAxis = triggerAxis(gp, 7);
-      const vertical = -((ltAxis - rtAxis) / 2);
+      const vertical = (ltAxis - rtAxis) / 2;
       const ltValue = gp.buttons[6] ? gp.buttons[6].value : 0;
       const rtValue = gp.buttons[7] ? gp.buttons[7].value : 0;
 
@@ -2415,9 +2471,15 @@
       };
       msg.buttons = msg.buttons.slice();
       msg.buttons[buttonIndex] = 1;
+      if (buttonIndex === 7) {
+        clearChartSamples();
+        chartCaptureEnabled = true;
+      } else if (buttonIndex === 6) {
+        chartCaptureEnabled = false;
+      }
       publishJoy(msg);
       if (buttonIndex === 7) {
-        el.modeMetric.textContent = selectedModeRequest;
+        el.modeMetric.textContent = selectedControlMode === "open_loop" ? "Boucle ouverte" : "Carotte LQR";
       }
       setTimeout(() => {
         msg.header.stamp = nowStamp();
@@ -2560,6 +2622,204 @@
       ].join(" / ");
     }
 
+    function pushChartSample(buffer, sample) {
+      buffer.push(sample);
+      const cutoff = sample.t - chartWindowMs;
+      while (buffer.length && buffer[0].t < cutoff) buffer.shift();
+    }
+
+    function clearChartSamples() {
+      Object.values(chartSamples).forEach((buffer) => { buffer.length = 0; });
+      lastChartOdomAt = 0;
+      drawAllCharts();
+    }
+
+    function sampleChartsFromTelemetry(odom, target) {
+      if (!chartCaptureEnabled) return;
+      if (!odom || !odom.pose || !odom.pose.pose || telemetry.odometry.lastAt === lastChartOdomAt) return;
+      lastChartOdomAt = telemetry.odometry.lastAt;
+      const now = Date.now();
+      const pose = odom.pose.pose;
+      const twist = odom.twist && odom.twist.twist;
+      const angles = quaternionToEuler(pose.orientation);
+      const targetAngles = target && target.pose ? quaternionToEuler(target.pose.orientation) : null;
+      const efforts = telemetry.thrusters.message && telemetry.thrusters.message.efforts;
+      const effortValues = Array.isArray(efforts) ? efforts.map(Number).filter(Number.isFinite) : [];
+      const currentDepth = -Number(pose.position.z || 0);
+      const targetDepth = target && target.pose ? -Number(target.pose.position.z || 0) : null;
+      const targetYawDeg = targetAngles ? degrees(targetAngles.yaw) : null;
+      const yawDeg = degrees(angles.yaw);
+      const yawErrorDeg = targetAngles ? degrees(wrapAngle(targetAngles.yaw - angles.yaw)) : null;
+
+      pushChartSample(chartSamples.yaw, {
+        t: now,
+        yaw: yawDeg,
+        target: targetYawDeg,
+        error: yawErrorDeg
+      });
+      pushChartSample(chartSamples.depth, {
+        t: now,
+        depth: currentDepth,
+        target: targetDepth
+      });
+      pushChartSample(chartSamples.angularRate, {
+        t: now,
+        roll: degrees(twist && twist.angular ? Number(twist.angular.x || 0) : 0),
+        pitch: degrees(twist && twist.angular ? Number(twist.angular.y || 0) : 0),
+        yaw: degrees(twist && twist.angular ? Number(twist.angular.z || 0) : 0)
+      });
+      if (effortValues.length) {
+        pushChartSample(chartSamples.thruster, {
+          t: now,
+          max: Math.max(...effortValues),
+          min: Math.min(...effortValues),
+          abs: Math.max(...effortValues.map((value) => Math.abs(value)))
+        });
+      }
+      drawAllCharts();
+    }
+
+    function drawAllCharts() {
+      drawChart(el.yawChart, chartSamples.yaw, [
+        { key: "yaw", label: "yaw", color: "#4f8cff" },
+        { key: "target", label: "target", color: "#31c67a" },
+        { key: "error", label: "error", color: "#ffb020" }
+      ], "deg");
+      drawChart(el.depthChart, chartSamples.depth, [
+        { key: "depth", label: "depth", color: "#4f8cff" },
+        { key: "target", label: "target", color: "#31c67a" }
+      ], "m");
+      drawChart(el.angularRateChart, chartSamples.angularRate, [
+        { key: "roll", label: "roll", color: "#a78bfa" },
+        { key: "pitch", label: "pitch", color: "#31c67a" },
+        { key: "yaw", label: "yaw", color: "#ffb020" }
+      ], "deg/s");
+      drawChart(el.thrusterChart, chartSamples.thruster, [
+        { key: "max", label: "max", color: "#31c67a" },
+        { key: "min", label: "min", color: "#ff4d4f" },
+        { key: "abs", label: "abs", color: "#4f8cff" }
+      ], "N");
+      updateChartReadouts();
+    }
+
+    function updateChartReadouts() {
+      const lastYaw = chartSamples.yaw.at(-1);
+      el.yawChartReadout.textContent = lastYaw
+        ? "yaw " + fixed(lastYaw.yaw, 1) + " / err " + fixed(lastYaw.error, 1) + " deg"
+        : "-";
+      const lastDepth = chartSamples.depth.at(-1);
+      el.depthChartReadout.textContent = lastDepth
+        ? fixed(lastDepth.depth, 2) + " m"
+        : "-";
+      const lastRate = chartSamples.angularRate.at(-1);
+      el.angularRateChartReadout.textContent = lastRate
+        ? "yaw rate " + fixed(lastRate.yaw, 1) + " deg/s"
+        : "-";
+      const lastThruster = chartSamples.thruster.at(-1);
+      el.thrusterChartReadout.textContent = lastThruster
+        ? "abs " + fixed(lastThruster.abs, 2) + " N"
+        : "-";
+    }
+
+    function drawChart(canvas, samples, series, unit) {
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      const width = Math.max(320, Math.round(rect.width || canvas.width));
+      const height = Math.max(160, Math.round(rect.height || canvas.height));
+      if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
+        canvas.width = Math.round(width * ratio);
+        canvas.height = Math.round(height * ratio);
+      }
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "#090d11";
+      ctx.fillRect(0, 0, width, height);
+
+      const pad = { left: 46, right: 12, top: 12, bottom: 26 };
+      const plotW = width - pad.left - pad.right;
+      const plotH = height - pad.top - pad.bottom;
+      ctx.strokeStyle = "rgba(148, 163, 184, 0.18)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i += 1) {
+        const y = pad.top + (plotH * i / 4);
+        ctx.beginPath();
+        ctx.moveTo(pad.left, y);
+        ctx.lineTo(width - pad.right, y);
+        ctx.stroke();
+      }
+
+      if (!samples.length) {
+        ctx.fillStyle = "#6f8297";
+        ctx.font = "13px ui-monospace, Menlo, Consolas, monospace";
+        ctx.fillText("En attente", pad.left + 8, pad.top + 24);
+        return;
+      }
+
+      const now = samples[samples.length - 1].t;
+      const start = Math.max(samples[0].t, now - chartWindowMs);
+      const visible = samples.filter((sample) => sample.t >= start);
+      const values = [];
+      visible.forEach((sample) => {
+        series.forEach((line) => {
+          const value = Number(sample[line.key]);
+          if (Number.isFinite(value)) values.push(value);
+        });
+      });
+      if (!values.length) return;
+      let min = Math.min(...values);
+      let max = Math.max(...values);
+      if (Math.abs(max - min) < 1e-6) {
+        min -= 1;
+        max += 1;
+      }
+      const margin = Math.max((max - min) * 0.12, 0.5);
+      min -= margin;
+      max += margin;
+
+      const xFor = (sample) => {
+        const span = Math.max(1, now - start);
+        return pad.left + ((sample.t - start) / span) * plotW;
+      };
+      const yFor = (value) => pad.top + (1 - ((value - min) / (max - min))) * plotH;
+
+      ctx.fillStyle = "#6f8297";
+      ctx.font = "11px ui-monospace, Menlo, Consolas, monospace";
+      ctx.fillText(fixed(max, 1), 6, pad.top + 4);
+      ctx.fillText(fixed(min, 1), 6, pad.top + plotH);
+      ctx.fillText(unit, 8, height - 8);
+
+      series.forEach((line) => {
+        ctx.strokeStyle = line.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        let started = false;
+        visible.forEach((sample) => {
+          const value = Number(sample[line.key]);
+          if (!Number.isFinite(value)) return;
+          const x = xFor(sample);
+          const y = yFor(value);
+          if (!started) {
+            ctx.moveTo(x, y);
+            started = true;
+          } else {
+            ctx.lineTo(x, y);
+          }
+        });
+        if (started) ctx.stroke();
+      });
+
+      let legendX = pad.left + 6;
+      series.forEach((line) => {
+        ctx.fillStyle = line.color;
+        ctx.fillRect(legendX, height - 17, 8, 8);
+        ctx.fillStyle = "#c8d3df";
+        ctx.fillText(line.label, legendX + 12, height - 9);
+        legendX += 58;
+      });
+    }
+
     function updateTopicRates() {
       Object.values(telemetry).forEach((item) => {
         item.rate = item.count;
@@ -2696,6 +2956,7 @@
           el.debugDepthError.textContent = "-";
           el.debugYawError.textContent = "-";
         }
+        sampleChartsFromTelemetry(odom, target);
       }
 
       const efforts = telemetry.thrusters.message && telemetry.thrusters.message.efforts;
@@ -2734,14 +2995,15 @@
 
     function updateControlLocks() {
       const modeLocked = playbackActive || recordEnabled;
-      const rosbridgeConnected = Boolean(ws && ws.readyState === WebSocket.OPEN);
       [
         el.referenceBodyBtn,
         el.referenceWorldBtn,
         el.progressionSetpointBtn,
-        el.progressionTimestampBtn
+        el.progressionTimestampBtn,
+        el.manualAssistedModeBtn,
+        el.openLoopModeBtn
       ].forEach((button) => { button.disabled = modeLocked; });
-      el.applyMatricesBtn.disabled = !rosbridgeConnected;
+      el.applyMatricesBtn.disabled = !controlStopped;
     }
 
     function sendPlaybackCommand(command) {
@@ -2781,10 +3043,12 @@
         playbackStatus,
         playbackRequestPending,
         controlStopped,
+        chartCaptureEnabled,
         killSwitchArmed,
         magneticSwitch2Active,
         lastJoy,
         manualAssistedDebug,
+        openLoopDebug,
         odometry: telemetry.odometry.message,
         controlTarget: telemetry.controlTarget.message,
         playbackTarget: telemetry.playbackTarget.message,
@@ -2815,6 +3079,9 @@
       document.querySelectorAll("[data-tab-button]").forEach((button) => {
         button.classList.toggle("active", button.dataset.tabButton === tabName);
       });
+      if (tabName === "debug") {
+        setTimeout(drawAllCharts, 0);
+      }
     }
 
     document.querySelectorAll("[data-tab-button]").forEach((button) => {
@@ -2823,8 +3090,10 @@
     document.getElementById("connectBtn").addEventListener("click", connect);
     document.getElementById("localBtn").addEventListener("click", () => applyHost("127.0.0.1"));
     document.getElementById("jetsonBtn").addEventListener("click", () => applyHost("192.168.0.10"));
-    document.getElementById("armBtn").addEventListener("click", () => sendSynthetic(7));
+    document.getElementById("armBtn").addEventListener("click", armSelectedMode);
     document.getElementById("stopBtn").addEventListener("click", () => sendSynthetic(6));
+    document.getElementById("manualAssistedModeBtn").addEventListener("click", () => setControlMode("manual_assisted"));
+    document.getElementById("openLoopModeBtn").addEventListener("click", () => setControlMode("open_loop"));
     document.getElementById("recordBtn").addEventListener("click", toggleRecording);
     document.getElementById("applyDepthLimitsBtn").addEventListener("click", applyDepthLimits);
     document.getElementById("referenceBodyBtn").addEventListener("click", () => setPlaybackReference("body"));
@@ -2832,7 +3101,7 @@
     document.getElementById("progressionSetpointBtn").addEventListener("click", () => setPlaybackProgression("setpoint"));
     document.getElementById("progressionTimestampBtn").addEventListener("click", () => setPlaybackProgression("timestamp"));
     document.getElementById("applyPlaybackSettingsBtn").addEventListener("click", applyPlaybackSettings);
-    document.getElementById("reloadMatricesBtn").addEventListener("click", () => requestControlParameters(true));
+    document.getElementById("reloadMatricesBtn").addEventListener("click", requestControlParameters);
     document.getElementById("applyMatricesBtn").addEventListener("click", applyMatrices);
     document.getElementById("profileStandstillBtn").addEventListener("click", () => selectProfile("standstill"));
     document.getElementById("profileForwardBtn").addEventListener("click", () => selectProfile("forward"));
@@ -2841,9 +3110,11 @@
     document.getElementById("playPlaybackBtn").addEventListener("click", () => sendPlaybackCommand("play"));
     document.getElementById("stopPlaybackBtn").addEventListener("click", () => sendPlaybackCommand("stop"));
     document.getElementById("reloadCamerasBtn").addEventListener("click", () => reloadCameras());
+    document.getElementById("clearChartsBtn").addEventListener("click", clearChartSamples);
     document.getElementById("clearDebugBtn").addEventListener("click", () => {
       lastJoy = null;
       manualAssistedDebug = null;
+      openLoopDebug = null;
       Object.values(telemetry).forEach((item) => {
         item.lastAt = 0;
         item.count = 0;
@@ -2875,8 +3146,10 @@
       setDot(el.gamepadDot, "bad");
       el.gamepadText.textContent = "Absent";
     });
+    window.addEventListener("resize", drawAllCharts);
 
     loadSettings();
+    updateControlModeButtons();
     updatePlaybackModeButtons();
     updateControlLocks();
     if ((window.location.protocol === "http:" || window.location.protocol === "https:") && window.location.hostname) {
@@ -2884,6 +3157,7 @@
       setTimeout(connect, 150);
     }
     resetInputs();
+    drawAllCharts();
     addEvent("info", "dashboard", "Dashboard prêt");
     publishTimer = setInterval(loop, publishPeriodMs);
     setInterval(updatePublishRate, 1000);

@@ -72,6 +72,9 @@ DEFAULT_MANUAL_ASSISTED_MAX_PITCH_DEG = 15.0
 DEFAULT_MANUAL_ASSISTED_JOYSTICK_CURVE = 1.6
 DEFAULT_MANUAL_ASSISTED_GAMEPAD_TIMEOUT = 0.75
 DEFAULT_MANUAL_ASSISTED_FORWARD_AXIS_SIGN = 1.0
+DEFAULT_OPEN_LOOP_MAX_THRUSTER_FORCE = 10.0
+DEFAULT_OPEN_LOOP_JOYSTICK_CURVE = 1.2
+DEFAULT_OPEN_LOOP_GAMEPAD_TIMEOUT = 0.35
 
 # ==========================================
 # ENUMS
@@ -85,11 +88,13 @@ class ControlMode(IntEnum):
         LQR_TUNING: Debug mode. Listens to simple pose topics (e.g., from RViz).
         MANUAL: Human override. Listens to Gamepad joystick inputs.
         MANUAL_ASSISTED: Human piloting through bounded LQR target generation.
+        OPEN_LOOP: Diagnostic/direct force mode. Bypasses the LQR.
     """
     BEHAVIOR = 0
     LQR_TUNING = 1
     MANUAL = 2
     MANUAL_ASSISTED = 3
+    OPEN_LOOP = 4
 
 # ==========================================
 # NODE DEFINITION
@@ -152,6 +157,9 @@ class ControlNode(Node):
         self.declare_parameter('manual_assisted.joystick_curve', DEFAULT_MANUAL_ASSISTED_JOYSTICK_CURVE)
         self.declare_parameter('manual_assisted.gamepad_timeout_sec', DEFAULT_MANUAL_ASSISTED_GAMEPAD_TIMEOUT)
         self.declare_parameter('manual_assisted.forward_axis_sign', DEFAULT_MANUAL_ASSISTED_FORWARD_AXIS_SIGN)
+        self.declare_parameter('open_loop.max_thruster_force_newton', DEFAULT_OPEN_LOOP_MAX_THRUSTER_FORCE)
+        self.declare_parameter('open_loop.joystick_curve', DEFAULT_OPEN_LOOP_JOYSTICK_CURVE)
+        self.declare_parameter('open_loop.gamepad_timeout_sec', DEFAULT_OPEN_LOOP_GAMEPAD_TIMEOUT)
 
         # PERFORMANCE ARCHITECTURE: Pre-allocate State Arrays
         # Initializing with NaN ensures the LQR math functions won't 
@@ -190,6 +198,10 @@ class ControlNode(Node):
             'forward': False,
             'turning': False
         }
+        self.open_loop_max_thruster_force = DEFAULT_OPEN_LOOP_MAX_THRUSTER_FORCE
+        self.open_loop_joystick_curve = DEFAULT_OPEN_LOOP_JOYSTICK_CURVE
+        self.open_loop_gamepad_timeout = DEFAULT_OPEN_LOOP_GAMEPAD_TIMEOUT
+        self.open_loop_last_gamepad_time = None
         self.software_kill_active = False
         self._last_mode_for_transition = None
         self.q_values = np.array(DEFAULT_Q, dtype=np.float64)
@@ -233,6 +245,9 @@ class ControlNode(Node):
         self.manual_assisted_joystick_curve = float(self.get_parameter('manual_assisted.joystick_curve').value)
         self.manual_assisted_gamepad_timeout = float(self.get_parameter('manual_assisted.gamepad_timeout_sec').value)
         self.manual_assisted_forward_axis_sign = float(self.get_parameter('manual_assisted.forward_axis_sign').value)
+        self.open_loop_max_thruster_force = float(self.get_parameter('open_loop.max_thruster_force_newton').value)
+        self.open_loop_joystick_curve = float(self.get_parameter('open_loop.joystick_curve').value)
+        self.open_loop_gamepad_timeout = float(self.get_parameter('open_loop.gamepad_timeout_sec').value)
         self.manual_assisted_depth_target = self.manual_assisted_default_depth_target
         if self.manual_assisted_depth_limits_enabled:
             self.manual_assisted_depth_target = self._clamp(
@@ -333,15 +348,19 @@ class ControlNode(Node):
         self.manual_assisted_debug_pub = self.create_publisher(
             Float64MultiArray, 'debug/manual_assisted', only_latest_qos
         )
+        self.open_loop_debug_pub = self.create_publisher(
+            Float64MultiArray, 'debug/open_loop_cmd', only_latest_qos
+        )
         self.control_target_pub = self.create_publisher(
             ControlTarget, 'control/target', only_latest_qos
         )
+        self.open_loop_watchdog_timer = self.create_timer(0.1, self._open_loop_watchdog)
 
-        if self._current_mode == ControlMode.MANUAL_ASSISTED:
+        if self._current_mode in (ControlMode.MANUAL_ASSISTED, ControlMode.OPEN_LOOP):
             self._publish_software_kill_state(True)
             self._publish_zero_thrust()
             self.get_logger().warn(
-                "MANUAL_ASSISTED ready but STOPPED. Press Start to arm."
+                f"{self._current_mode.name} ready but STOPPED. Press Start to arm."
             )
 
         # --- Action Server ---
@@ -462,6 +481,10 @@ class ControlNode(Node):
                 result = self._set_manual_assisted_parameter(param)
                 if not result.successful:
                     return result
+            elif param.name.startswith('open_loop.'):
+                result = self._set_open_loop_parameter(param)
+                if not result.successful:
+                    return result
             elif param.name.startswith('lqr_profiles.'):
                 continue
             else:
@@ -526,7 +549,7 @@ class ControlNode(Node):
                 continue
             if param.name == 'control_mode':
                 if str(param.value).lower() not in (
-                    'behavior', 'manual', 'lqr_tuning', 'manual_assisted'
+                    'behavior', 'manual', 'lqr_tuning', 'manual_assisted', 'open_loop'
                 ):
                     return SetParametersResult(
                         successful=False, reason='Invalid mode string'
@@ -596,6 +619,10 @@ class ControlNode(Node):
                     )
             elif param.name.startswith('manual_assisted.'):
                 result = self._validate_manual_assisted_parameter(param)
+                if not result.successful:
+                    return result
+            elif param.name.startswith('open_loop.'):
+                result = self._validate_open_loop_parameter(param)
                 if not result.successful:
                     return result
             elif param.name.startswith('lqr_profiles.'):
@@ -726,17 +753,19 @@ class ControlNode(Node):
             self._current_mode = ControlMode.MANUAL
         elif mode_str == 'manual_assisted':
             self._current_mode = ControlMode.MANUAL_ASSISTED
+        elif mode_str == 'open_loop':
+            self._current_mode = ControlMode.OPEN_LOOP
         else:
             self.get_logger().warn(f"Unknown control mode: {mode_str}")
             return False
         if hasattr(self, '_last_mode_for_transition') and self._last_mode_for_transition != self._current_mode:
-            if self._current_mode == ControlMode.MANUAL_ASSISTED:
+            if self._current_mode in (ControlMode.MANUAL_ASSISTED, ControlMode.OPEN_LOOP):
                 self.software_kill_active = True
                 if hasattr(self, 'disable_pwm_pub'):
                     self._publish_software_kill_state(True)
                     self._publish_zero_thrust()
                     self.get_logger().warn(
-                        "MANUAL_ASSISTED selected but STOPPED. Press Start to arm."
+                        f"{self._current_mode.name} selected but STOPPED. Press Start to arm."
                     )
             self._last_mode_for_transition = self._current_mode
         self.get_logger().info(f"SUB Control mode set as: {self._current_mode.name}")
@@ -1132,9 +1161,22 @@ class ControlNode(Node):
             self._manual_assisted_gamepad_update(
                 forward_cmd=self.manual_assisted_forward_axis_sign * left_stick_y,
                 yaw_cmd=left_stick_x,
-                vertical_cmd=-triggers_axis,
+                vertical_cmd=triggers_axis,
                 roll_cmd=0.0,
                 pitch_cmd=0.0
+            )
+            return
+
+        if self._current_mode == ControlMode.OPEN_LOOP:
+            if self.software_kill_active:
+                return
+            self._open_loop_gamepad_update(
+                surge_cmd=left_stick_y,
+                sway_cmd=left_stick_x,
+                heave_cmd=-triggers_axis,
+                roll_cmd=button_b - button_x,
+                pitch_cmd=button_y - button_a,
+                yaw_cmd=right_stick_x
             )
             return
         
@@ -1415,6 +1457,64 @@ class ControlNode(Node):
             )
         return SetParametersResult(successful=True)
 
+    def _set_open_loop_parameter(self, param):
+        """Update one open-loop diagnostic parameter at runtime."""
+        try:
+            value = float(param.value)
+        except (TypeError, ValueError):
+            return SetParametersResult(successful=False, reason=f'{param.name} must be numeric')
+
+        if param.name == 'open_loop.max_thruster_force_newton':
+            if value <= 0.0:
+                return SetParametersResult(successful=False, reason='open_loop.max_thruster_force_newton must be > 0.0')
+            self.open_loop_max_thruster_force = value
+        elif param.name == 'open_loop.joystick_curve':
+            if value < 1.0:
+                return SetParametersResult(successful=False, reason='open_loop.joystick_curve must be >= 1.0')
+            self.open_loop_joystick_curve = value
+        elif param.name == 'open_loop.gamepad_timeout_sec':
+            if value <= 0.0:
+                return SetParametersResult(successful=False, reason='open_loop.gamepad_timeout_sec must be > 0.0')
+            self.open_loop_gamepad_timeout = value
+        else:
+            return SetParametersResult(successful=False, reason=f'Unhandled parameter: {param.name}')
+
+        return SetParametersResult(successful=True)
+
+    def _validate_open_loop_parameter(self, param):
+        """Validate one open-loop diagnostic value without changing controller state."""
+        try:
+            value = float(param.value)
+        except (TypeError, ValueError):
+            return SetParametersResult(
+                successful=False, reason=f'{param.name} must be numeric'
+            )
+
+        if param.name == 'open_loop.max_thruster_force_newton':
+            if value <= 0.0:
+                return SetParametersResult(
+                    successful=False,
+                    reason='open_loop.max_thruster_force_newton must be > 0.0'
+                )
+        elif param.name == 'open_loop.joystick_curve':
+            if value < 1.0:
+                return SetParametersResult(
+                    successful=False,
+                    reason='open_loop.joystick_curve must be >= 1.0'
+                )
+        elif param.name == 'open_loop.gamepad_timeout_sec':
+            if value <= 0.0:
+                return SetParametersResult(
+                    successful=False,
+                    reason='open_loop.gamepad_timeout_sec must be > 0.0'
+                )
+        else:
+            return SetParametersResult(
+                successful=False, reason=f'Unhandled parameter: {param.name}'
+            )
+
+        return SetParametersResult(successful=True)
+
     def _clamp_manual_assisted_depth_targets(self):
         self.manual_assisted_depth_target = self._clamp(
             self.manual_assisted_depth_target,
@@ -1660,6 +1760,60 @@ class ControlNode(Node):
             self.target_state[5] = self.manual_assisted_yaw_target
             self.target_state[6:12] = 0.0
 
+    def _open_loop_gamepad_update(
+        self,
+        surge_cmd,
+        sway_cmd,
+        heave_cmd,
+        roll_cmd,
+        pitch_cmd,
+        yaw_cmd
+    ):
+        """Convert gamepad intent directly into bounded thruster forces."""
+        self.open_loop_last_gamepad_time = self._now_seconds()
+        shaped_cmd = np.array([
+            self._shape_open_loop_joystick(surge_cmd),
+            self._shape_open_loop_joystick(sway_cmd),
+            self._shape_open_loop_joystick(heave_cmd),
+            self._shape_open_loop_joystick(roll_cmd),
+            self._shape_open_loop_joystick(pitch_cmd),
+            self._shape_open_loop_joystick(yaw_cmd),
+        ], dtype=np.float64)
+
+        thrusters_force = THRUST_ALLOC_MAT.dot(shaped_cmd) * self.open_loop_max_thruster_force
+        thrusters_force = np.clip(
+            thrusters_force,
+            -self.open_loop_max_thruster_force,
+            self.open_loop_max_thruster_force
+        )
+        thrusters_force = thrusters_force * self.thruster_force_signs
+
+        self.thruster_pub.publish(ThrusterCommand(efforts=thrusters_force.tolist()))
+
+        dbg = Float64MultiArray()
+        dbg.data = shaped_cmd.tolist() + thrusters_force.tolist()
+        self.open_loop_debug_pub.publish(dbg)
+
+    def _open_loop_watchdog(self):
+        """Zero open-loop thrust if the gamepad stream stops."""
+        if self._current_mode != ControlMode.OPEN_LOOP:
+            return
+        if self.software_kill_active:
+            self._publish_zero_thrust()
+            return
+        last = self.open_loop_last_gamepad_time
+        if last is None:
+            self._publish_zero_thrust()
+            return
+        if (self._now_seconds() - last) > self.open_loop_gamepad_timeout:
+            self._publish_zero_thrust()
+
+    def _shape_open_loop_joystick(self, value):
+        value = self._avoid_joystick_dead_zone(float(value))
+        if value == 0:
+            return 0.0
+        return math.copysign(abs(value) ** self.open_loop_joystick_curve, value)
+
     def _limit_manual_assisted_carrot(self):
         norm = float(np.linalg.norm(self.manual_assisted_carrot_body))
         if norm > self.manual_assisted_max_carrot_distance:
@@ -1720,15 +1874,23 @@ class ControlNode(Node):
         """
         retval = False
         if mode_switch_button and not self.last_mode_switch_button_state:
-            if self._current_mode != ControlMode.MANUAL_ASSISTED:
-                updated_param = Parameter('control_mode', value='manual_assisted')
-                self.set_parameters([updated_param])
-            if self._initialize_manual_assisted_targets():
+            if self._current_mode == ControlMode.OPEN_LOOP:
+                self.open_loop_last_gamepad_time = self._now_seconds()
                 self._clear_software_kill()
+                self.get_logger().warn(
+                    f"OPEN_LOOP armed: direct thruster force mode, "
+                    f"limit={self.open_loop_max_thruster_force:.1f} N"
+                )
+            else:
+                if self._current_mode != ControlMode.MANUAL_ASSISTED:
+                    updated_param = Parameter('control_mode', value='manual_assisted')
+                    self.set_parameters([updated_param])
+                if self._initialize_manual_assisted_targets():
+                    self._clear_software_kill()
             retval = True
         self.last_mode_switch_button_state = mode_switch_button
         return retval
-    
+
     def _avoid_joystick_dead_zone(self, joystick):
         """
         Ignore minor joystick drift to prevent the sub from slowly creeping.
