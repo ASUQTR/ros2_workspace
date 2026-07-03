@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Submarine Path Visualizer</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">🛰️ Sub Path Visualizer</div>
+
+    <div class="mode-toggle" role="tablist" aria-label="Mode">
+      <button id="mode-live" class="mode-btn active" role="tab">Live</button>
+      <button id="mode-playback" class="mode-btn" role="tab">Playback</button>
+    </div>
+
+    <div class="status-area">
+      <span id="status-dot" class="dot dot-idle"></span>
+      <span id="status-text">Idle</span>
+    </div>
+
+    <button id="settings-btn" class="icon-btn" title="Settings">⚙</button>
+  </header>
+
+  <main>
+    <!-- Live mode panel -->
+    <section id="live-panel" class="panel">
+      <button id="live-connect" class="primary">Connect</button>
+      <button id="live-disconnect" class="secondary" disabled>Disconnect</button>
+      <div class="stat"><label>Position</label><span id="live-pos">—</span></div>
+      <div class="stat"><label>Heading</label><span id="live-heading">—</span></div>
+      <div class="stat"><label>Rate</label><span id="live-rate">—</span></div>
+      <div class="stat"><label>Points</label><span id="live-count">0</span></div>
+      <button id="live-clear" class="secondary">Clear path</button>
+    </section>
+
+    <!-- Playback mode panel -->
+    <section id="playback-panel" class="panel hidden">
+      <div class="pb-row">
+        <label class="file-input">
+          <input type="file" id="pb-file" accept=".db3,.mcap,.zip" />
+          <span>Upload rosbag</span>
+        </label>
+        <select id="pb-select" title="Available rosbags">
+          <option value="">— select rosbag —</option>
+        </select>
+        <button id="pb-refresh" class="secondary" title="Refresh list">↻</button>
+        <button id="pb-delete" class="secondary" title="Delete selected" disabled>🗑</button>
+      </div>
+
+      <div id="pb-progress" class="progress hidden">
+        <div id="pb-progress-bar" class="progress-bar"></div>
+        <span id="pb-progress-label">Extracting…</span>
+      </div>
+
+      <div class="pb-row transport">
+        <button id="pb-play" class="primary" disabled>▶</button>
+        <button id="pb-pause" class="secondary hidden">⏸</button>
+        <button id="pb-stop" class="secondary" disabled>⏹</button>
+        <input type="range" id="pb-timeline" min="0" max="1000" value="0" step="1" disabled />
+        <span id="pb-time" class="time">00:00 / 00:00</span>
+        <select id="pb-speed" title="Playback speed">
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+          <option value="4">4×</option>
+          <option value="8">8×</option>
+        </select>
+      </div>
+
+      <div id="pb-meta" class="pb-meta"></div>
+    </section>
+
+    <!-- Canvas -->
+    <div id="canvas-wrap">
+      <canvas id="map"></canvas>
+      <div class="canvas-overlay">
+        <button id="fit-btn" class="secondary" title="Fit to view">Fit</button>
+      </div>
+      <div id="hud"></div>
+    </div>
+  </main>
+
+  <!-- Settings modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-box">
+      <h2>Settings</h2>
+      <label>ROS bridge IP
+        <input type="text" id="cfg-ip" placeholder="192.168.1.100" />
+      </label>
+      <label>ROS bridge port
+        <input type="number" id="cfg-port" placeholder="9090" />
+      </label>
+      <label>API key <span class="muted">(if required)</span>
+        <input type="password" id="cfg-key" placeholder="leave blank if none" />
+      </label>
+      <p id="cfg-note" class="muted"></p>
+      <div class="modal-actions">
+        <button id="cfg-save" class="primary">Save</button>
+        <button id="cfg-close" class="secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/js/utils.js"></script>
+  <script src="/static/js/canvas-renderer.js"></script>
+  <script src="/static/js/settings.js"></script>
+  <script src="/static/js/live-mode.js"></script>
+  <script src="/static/js/playback-mode.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
