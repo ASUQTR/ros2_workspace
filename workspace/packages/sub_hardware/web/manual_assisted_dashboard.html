@@ -1371,6 +1371,7 @@
     let playbackStatus = "-";
     let playbackReferenceMode = "body";
     let playbackProgressionMode = "setpoint";
+    let playbackType = "assisted_target";
     let playbackActive = false;
     let controlStopped = true;
     let disablePwmReceived = false;
@@ -2533,6 +2534,7 @@
       latestPlaybackStatus = msg;
       playbackReferenceMode = msg.reference_mode || playbackReferenceMode;
       playbackProgressionMode = msg.progression_mode || playbackProgressionMode;
+      playbackType = msg.playback_type || playbackType;
       playbackActive = ["playing", "recording"].includes(msg.state);
       if (!recordRequestPending) {
         if (msg.state === "recording" && !recordEnabled) {
@@ -2559,6 +2561,7 @@
         const detail = [
           state || "statut",
           total ? (current + 1) + "/" + total : "",
+          msg.playback_type || "",
           msg.reference_mode || "",
           msg.progression_mode || "",
           msg.error || ""
@@ -2904,6 +2907,7 @@
         el.debugPlaybackState.textContent = String(latestPlaybackStatus.state || "-").toUpperCase();
         el.debugPlaybackDetail.textContent = [
           total ? "Point " + (current + 1) + "/" + total : "Aucun point",
+          latestPlaybackStatus.playback_type || "-",
           latestPlaybackStatus.reference_mode || "-",
           latestPlaybackStatus.progression_mode || "-",
           latestPlaybackStatus.error || ""
@@ -3010,6 +3014,12 @@
       if (playbackRequestPending) return;
       saveSettings();
       const filePath = el.playbackPath.value.trim();
+      const requestedPlaybackType = selectedControlMode === "open_loop"
+        ? "open_loop"
+        : "assisted_target";
+      const requestedProgressionMode = requestedPlaybackType === "open_loop"
+        ? "timestamp"
+        : playbackProgressionMode;
       const sent = send({
         op: "call_service",
         id: "playback-command-" + command + "-" + Date.now(),
@@ -3020,7 +3030,8 @@
           file_path: filePath,
           loop: false,
           reference_mode: playbackReferenceMode,
-          progression_mode: playbackProgressionMode
+          progression_mode: requestedProgressionMode,
+          playback_type: requestedPlaybackType
         }
       });
       if (!sent) {
@@ -3041,6 +3052,7 @@
         recordEnabled,
         recordRequestPending,
         playbackStatus,
+        playbackType,
         playbackRequestPending,
         controlStopped,
         chartCaptureEnabled,

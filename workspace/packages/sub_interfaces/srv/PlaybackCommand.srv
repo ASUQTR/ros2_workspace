@@ -3,6 +3,7 @@ string file_path
 bool loop
 string reference_mode
 string progression_mode
+string playback_type
 ---
 bool success
 string message

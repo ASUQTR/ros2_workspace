@@ -17,7 +17,7 @@ from rcl_interfaces.msg import ParameterEvent, SetParametersResult
 from rcl_interfaces.srv import SetParameters
 from std_msgs.msg import Bool
 
-from sub_interfaces.msg import ControlTarget, PlaybackStatus
+from sub_interfaces.msg import ControlTarget, PlaybackStatus, ThrusterCommand
 from sub_interfaces.srv import PlaybackCommand, PlaybackPath, PlaybackRecording
 
 
@@ -25,6 +25,7 @@ class PlaybackNode(Node):
     FORMAT_VERSION = 2
     VALID_REFERENCE_MODES = {'world', 'body'}
     VALID_PROGRESSION_MODES = {'setpoint', 'timestamp'}
+    VALID_PLAYBACK_TYPES = {'assisted_target', 'open_loop'}
 
     def __init__(self):
         super().__init__('playback_node')
@@ -98,6 +99,8 @@ class PlaybackNode(Node):
         self.loaded_waypoints = []
         self.loaded_file_path = ''
         self.latest_control_target = None
+        self.latest_thruster_efforts = None
+        self.last_thruster_at = None
         self.current_odometry = None
         self.last_odometry_at = None
         self.previous_keyframe = None
@@ -118,6 +121,7 @@ class PlaybackNode(Node):
         self.last_path_progress_at = None
         self.reference_mode = 'body'
         self.progression_mode = 'setpoint'
+        self.playback_type = 'assisted_target'
         self.control_stopped = True
         self.kill_switch_armed = not self.require_kill_switch_armed
         self.last_magnetic_switch_state = False
@@ -164,6 +168,13 @@ class PlaybackNode(Node):
             sensor_qos,
             callback_group=self.record_cb_group
         )
+        self.thruster_subscription = self.create_subscription(
+            ThrusterCommand,
+            'thruster_cmd',
+            self.thruster_callback,
+            sensor_qos,
+            callback_group=self.record_cb_group
+        )
         self.control_stop_subscription = self.create_subscription(
             Bool, 'disable_pwm', self.control_stop_callback, latched_qos
         )
@@ -178,6 +189,9 @@ class PlaybackNode(Node):
         )
         self.playback_target_pub = self.create_publisher(
             ControlTarget, 'control/playback_target', sensor_qos
+        )
+        self.open_loop_playback_pub = self.create_publisher(
+            ThrusterCommand, 'control/open_loop_playback', sensor_qos
         )
         self.status_pub = self.create_publisher(
             PlaybackStatus, 'playback/status', latched_qos
@@ -351,6 +365,11 @@ class PlaybackNode(Node):
         if msg.source_mode == 'manual_assisted':
             self.latest_control_target = msg
 
+    def thruster_callback(self, msg):
+        if len(msg.efforts) >= 8:
+            self.latest_thruster_efforts = [float(value) for value in msg.efforts[:8]]
+            self.last_thruster_at = self.get_clock().now()
+
     def parameter_event_callback(self, msg):
         if msg.node not in ('/control_node', 'control_node'):
             return
@@ -376,10 +395,11 @@ class PlaybackNode(Node):
         self.last_record_sample_at = now
 
         candidate = self.odometry_to_keyframe(odometry, now)
-        if self.previous_keyframe is not None and not force:
+        motor_sample = candidate.get('thruster_efforts') is not None
+        if self.previous_keyframe is not None and not force and not motor_sample:
             if not self.is_significant_keyframe(self.previous_keyframe, candidate):
                 return
-        if self.previous_keyframe is not None and self.same_pose(
+        if self.previous_keyframe is not None and not motor_sample and self.same_pose(
             self.previous_keyframe, candidate
         ):
             return
@@ -403,6 +423,9 @@ class PlaybackNode(Node):
                 float(self.latest_control_target.carrot_forward),
                 float(self.latest_control_target.carrot_right)
             ]
+        thruster_efforts = None
+        if self.latest_thruster_efforts is not None:
+            thruster_efforts = list(self.latest_thruster_efforts)
         return {
             'time_from_start': elapsed,
             'world_pose': {
@@ -424,7 +447,8 @@ class PlaybackNode(Node):
             'pitch': float(pitch),
             'yaw': float(yaw),
             'carrot_body': carrot,
-            'lqr_profile': self.current_lqr_profile
+            'lqr_profile': self.current_lqr_profile,
+            'thruster_efforts': thruster_efforts
         }
 
     def is_significant_keyframe(self, previous, candidate):
@@ -465,6 +489,7 @@ class PlaybackNode(Node):
         command = request.command.strip().lower()
         reference_mode = request.reference_mode.strip().lower() or self.reference_mode
         progression_mode = request.progression_mode.strip().lower() or self.progression_mode
+        playback_type = request.playback_type.strip().lower() or self.playback_type
         if reference_mode not in self.VALID_REFERENCE_MODES:
             return self.command_response(
                 response, False, f'Invalid reference mode: {reference_mode}'
@@ -473,10 +498,17 @@ class PlaybackNode(Node):
             return self.command_response(
                 response, False, f'Invalid progression mode: {progression_mode}'
             )
+        if playback_type not in self.VALID_PLAYBACK_TYPES:
+            return self.command_response(
+                response, False, f'Invalid playback type: {playback_type}'
+            )
+        if playback_type == 'open_loop':
+            progression_mode = 'timestamp'
         if self.is_playing or self.is_recording:
             if (
                 reference_mode != self.reference_mode
                 or progression_mode != self.progression_mode
+                or playback_type != self.playback_type
             ):
                 return self.command_response(
                     response, False, 'Playback modes are locked while active'
@@ -484,6 +516,7 @@ class PlaybackNode(Node):
         else:
             self.reference_mode = reference_mode
             self.progression_mode = progression_mode
+            self.playback_type = playback_type
 
         if command == 'load':
             success, message = self.load_playback_file(request.file_path)
@@ -555,6 +588,9 @@ class PlaybackNode(Node):
             body_yaw = float(body.get('yaw', 0.0))
             depth_target = float(item.get('depth_target', -world_position[2]))
             lqr_profile = self.normalize_lqr_profile(item.get('lqr_profile', 'standstill'))
+            thruster_efforts = self.normalize_thruster_efforts(
+                item.get('thruster_efforts')
+            )
         else:
             world_position = item.get('position')
             world_orientation = item.get('angles', [0.0, 0.0, 0.0, 1.0])
@@ -566,6 +602,9 @@ class PlaybackNode(Node):
             )
             depth_target = float(-world_position[2])
             lqr_profile = 'standstill'
+            thruster_efforts = self.normalize_thruster_efforts(
+                item.get('thruster_efforts')
+            )
 
         return {
             'time_from_start': float(
@@ -583,8 +622,17 @@ class PlaybackNode(Node):
             'carrot_body': [
                 float(value) for value in item.get('carrot_body', [0.0, 0.0])[:2]
             ],
-            'lqr_profile': lqr_profile
+            'lqr_profile': lqr_profile,
+            'thruster_efforts': thruster_efforts
         }
+
+    @staticmethod
+    def normalize_thruster_efforts(value):
+        if value is None:
+            return None
+        if not isinstance(value, (list, tuple)) or len(value) < 8:
+            return None
+        return [float(effort) for effort in value[:8]]
 
     @staticmethod
     def normalize_lqr_profile(value):
@@ -617,12 +665,19 @@ class PlaybackNode(Node):
             return False, 'No playback file loaded'
         if self.require_kill_switch_armed and not self.kill_switch_armed:
             return False, 'Cannot start playback: physical kill switch is not armed'
-        if not self.odometry_is_fresh():
+        if self.playback_type != 'open_loop' and not self.odometry_is_fresh():
             return False, 'Cannot start playback: odometry is unavailable or stale'
         if self.control_stopped:
             return False, 'Cannot start playback: press Start first'
-        self.playback_targets = self.build_playback_targets()
-        self.rebuild_playback_path_distances()
+        if self.playback_type == 'open_loop':
+            if not self.recording_has_thruster_efforts():
+                return False, 'Cannot start open-loop playback: JSON has no thruster_efforts'
+            self.progression_mode = 'timestamp'
+            self.playback_targets = []
+            self.playback_path_distances = []
+        else:
+            self.playback_targets = self.build_playback_targets()
+            self.rebuild_playback_path_distances()
         self.playback_loop = bool(loop)
         self.playback_started_at = self.get_clock().now()
         self.last_path_progress_station = 0.0
@@ -635,7 +690,8 @@ class PlaybackNode(Node):
         self.activate_current_waypoint()
         self.publish_status('playing')
         return True, (
-            f'Started {self.reference_mode} + {self.progression_mode} playback '
+            f'Started {self.playback_type} '
+            f'{self.reference_mode} + {self.progression_mode} playback '
             f'with {len(self.loaded_waypoints)} waypoint(s)'
         )
 
@@ -651,21 +707,59 @@ class PlaybackNode(Node):
         self.last_path_progress_at = None
         self.last_error = error
         self.last_timed_out = timed_out
+        if self.playback_type == 'open_loop':
+            self.publish_open_loop_thrusters([0.0] * 8)
         self.publish_status(state)
 
     def playback_timer_callback(self):
         if not self.is_playing:
             return
         if self.control_stopped:
-            self.stop_playback('stopped', 'MANUAL_ASSISTED was stopped')
+            self.stop_playback('stopped', 'Control was stopped')
             return
-        if not self.odometry_is_fresh():
+        if self.playback_type != 'open_loop' and not self.odometry_is_fresh():
             self.stop_playback('error', 'Odometry became stale')
+            return
+        if self.playback_type == 'open_loop':
+            self.open_loop_timestamp_progression()
             return
         if self.progression_mode == 'timestamp':
             self.timestamp_progression()
         else:
             self.setpoint_progression()
+
+    def recording_has_thruster_efforts(self):
+        return all(
+            waypoint.get('thruster_efforts') is not None
+            for waypoint in self.loaded_waypoints
+        )
+
+    def open_loop_timestamp_progression(self):
+        elapsed = (self.get_clock().now() - self.playback_started_at).nanoseconds / 1e9
+        while (
+            self.playback_index + 1 < len(self.loaded_waypoints)
+            and elapsed >= self.loaded_waypoints[self.playback_index + 1]['time_from_start']
+        ):
+            self.playback_index += 1
+            self.active_waypoint_started_at = self.get_clock().now()
+            self.publish_status('playing')
+
+        waypoint = self.loaded_waypoints[self.playback_index]
+        efforts = waypoint.get('thruster_efforts')
+        self.publish_open_loop_thrusters(efforts if efforts is not None else [0.0] * 8)
+
+        if (
+            self.playback_index == len(self.loaded_waypoints) - 1
+            and elapsed >= self.loaded_waypoints[-1]['time_from_start']
+        ):
+            final_age = (self.get_clock().now() - self.active_waypoint_started_at).nanoseconds / 1e9
+            if final_age >= self.min_waypoint_hold:
+                self.complete_or_loop()
+
+    def publish_open_loop_thrusters(self, efforts):
+        msg = ThrusterCommand()
+        msg.efforts = [float(value) for value in efforts[:8]]
+        self.open_loop_playback_pub.publish(msg)
 
     def timestamp_progression(self):
         elapsed = (self.get_clock().now() - self.playback_started_at).nanoseconds / 1e9
@@ -709,6 +803,15 @@ class PlaybackNode(Node):
 
     def activate_current_waypoint(self):
         waypoint = self.loaded_waypoints[self.playback_index]
+        if self.playback_type == 'open_loop':
+            now = self.get_clock().now()
+            self.active_waypoint_started_at = now
+            self.last_target_publish_at = now
+            efforts = waypoint.get('thruster_efforts')
+            self.publish_open_loop_thrusters(efforts if efforts is not None else [0.0] * 8)
+            self.publish_status('playing')
+            return
+
         self.resolved_target = self.resolve_target(waypoint, self.playback_index)
         now = self.get_clock().now()
         self.active_waypoint_started_at = now
@@ -994,8 +1097,12 @@ class PlaybackNode(Node):
 
     def complete_or_loop(self):
         if self.playback_loop:
-            self.playback_targets = self.build_playback_targets()
-            self.rebuild_playback_path_distances()
+            if self.playback_type == 'open_loop':
+                self.playback_targets = []
+                self.playback_path_distances = []
+            else:
+                self.playback_targets = self.build_playback_targets()
+                self.rebuild_playback_path_distances()
             self.last_path_progress_station = 0.0
             self.last_path_progress_at = self.get_clock().now()
             self.playback_index = 0
@@ -1053,6 +1160,7 @@ class PlaybackNode(Node):
         msg.waypoint_count = len(self.loaded_waypoints)
         msg.reference_mode = self.reference_mode
         msg.progression_mode = self.progression_mode
+        msg.playback_type = self.playback_type
         msg.error = self.last_error
         msg.timed_out = self.last_timed_out
         self.status_pub.publish(msg)

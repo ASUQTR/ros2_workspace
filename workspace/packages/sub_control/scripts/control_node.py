@@ -326,6 +326,10 @@ class ControlNode(Node):
              PlaybackStatus, 'playback/status', self.playback_status_callback, latched_qos,
              callback_group=self.action_cb_group
         )
+        self.open_loop_playback_sub = self.create_subscription(
+             ThrusterCommand, 'control/open_loop_playback', self.open_loop_playback_callback, only_latest_qos,
+             callback_group=self.action_cb_group
+        )
         
         self.thruster_pub = self.create_publisher(
             ThrusterCommand, 'thruster_cmd', only_latest_qos
@@ -1106,6 +1110,29 @@ class ControlNode(Node):
             self.get_logger().info(
                 f"Playback target released after state '{msg.state}'."
             )
+
+    def open_loop_playback_callback(self, msg):
+        """Forward timestamped open-loop playback efforts while preserving safety gates."""
+        if self._current_mode != ControlMode.OPEN_LOOP:
+            return
+        self.open_loop_last_gamepad_time = self._now_seconds()
+        if self.software_kill_active:
+            self._publish_zero_thrust()
+            return
+
+        efforts = np.asarray(msg.efforts[:8], dtype=np.float64)
+        if efforts.size != 8:
+            return
+        efforts = np.clip(
+            efforts,
+            -self.open_loop_max_thruster_force,
+            self.open_loop_max_thruster_force
+        )
+        self.thruster_pub.publish(ThrusterCommand(efforts=efforts.tolist()))
+
+        dbg = Float64MultiArray()
+        dbg.data = [float('nan')] * 6 + efforts.tolist()
+        self.open_loop_debug_pub.publish(dbg)
 
     def _has_recent_playback_target(self):
         if self.manual_assisted_playback_active:

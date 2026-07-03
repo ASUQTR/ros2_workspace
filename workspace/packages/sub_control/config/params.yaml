@@ -58,8 +58,9 @@ control_node:
     max_thruster_force_newton: 14.4
     # Per-thruster force sign applied just before publishing /thruster_cmd.
     # Use this to align ROS effort signs with the physical/Unity thruster mounting.
-    # Current test hypothesis: horizontal thrusters 1,2,7,8 need inversion.
-    thruster_force_signs: [-1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0]
+    # Current test hypothesis: all thrusters need inversion to align positive
+    # ROS efforts with the physical T200 thrust direction.
+    thruster_force_signs: [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
 
     # The A matrix stores damping as positive magnitudes; -1.0 makes it dissipative.
     damping_sign: -1.0
