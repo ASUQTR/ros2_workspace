@@ -1,1 +1,0 @@
-./env/jetson/start.sh

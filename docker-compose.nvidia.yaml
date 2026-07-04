@@ -1,3 +1,0 @@
-services:
-  sub_control_core:
-    runtime: nvidia
