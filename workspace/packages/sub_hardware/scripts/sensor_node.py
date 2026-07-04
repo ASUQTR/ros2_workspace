@@ -151,11 +151,13 @@ class SensorNode(Node):
         msg.pose.pose.position.z = -self.depth_sensor.depth()
         
         # 3. Define the measurement uncertainty (Variance)
-        # The covariance matrix is a flat 36-element array representing a 6x6 matrix 
+        # The covariance matrix is a flat 36-element array representing a 6x6 matrix
         # for X, Y, Z, Roll, Pitch, Yaw. The diagonal elements represent the variance.
         # Row 3, Column 3 (which is index 14 in a 0-indexed array) is the Z-axis variance.
-        # A variance of 0.0001 m^2 means a standard deviation of 0.01 m (or 1 cm) of noise.
-        msg.pose.covariance[14] = 0.0001 
+        # MS5837-30BA resolution at OSR_4096 is ~0.28 mbar RMS -> ~3mm depth RMS ->
+        # variance ~9e-6 m^2. Kept slightly above raw spec for margin against real
+        # operating conditions (temperature drift, fluid density assumption error).
+        msg.pose.covariance[14] = 1e-5
         
         # 4. Publish the data to the rest of the software stack
         self.depth_pub.publish(msg)

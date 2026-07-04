@@ -69,6 +69,15 @@ vectornav:
           0.0, 1.0, 0.0,
           0.0, 0.0, 0.9033]
       B: [0.0, 0.0, 0.0]
+    # VPE Basic Control (Register 35, section 7.1.1)
+    # headingMode: 0=Absolute, 1=Relative, 2=Indoor. Indoor rejects magnetic disturbances
+    # instead of always trusting them — set for this sub's known ESC/buck-converter EMI
+    # corrupting the magnetometer. This is also applied before magnetometer calibration,
+    # so recalibrating no longer silently reverts the sensor to Absolute mode.
+    vpeBasicControl:
+      headingMode: 2   # HEADINGMODE_INDOOR
+      filteringMode: 1 # VPEMODE_MODE1
+      tuningMode: 1    # VPEMODE_MODE1
 
 vn_sensor_msgs:
   ros__parameters:
@@ -79,13 +88,15 @@ vn_sensor_msgs:
     angular_velocity_covariance: [0.01,  0.0,   0.0,
                          0.0,   0.01,  0.0,
                          0.0,   0.0,   0.01]
-    # Measured empirically: sub stationary on flat surface, 3000 samples at 100Hz (30s), VN-100 internal filtering active.
-    # σ²: ax=6.6e-5, ay=5.7e-5, az=1.2e-4 (m/s²)². az higher due to residual Z-axis noise post accel compensation.
-    # Covariance inflated 100x from static measurement to reflect operational jitter observed during runtime.
-    # EKF will trust DVL velocity corrections over IMU acceleration integration as a result.
-    linear_acceleration_covariance: [0.1,    0.0,    0.0,
-                                     0.0,    0.1,    0.0,
-                                     0.0,    0.0,    0.1]
+    # Re-measured empirically in-water (not dry bench): sub stationary, 2+ min at 100Hz (12000+ samples).
+    # ax/ay/az range +/-0.10 m/s^2 (~3 sigma) -> sigma ~0.033 m/s^2 -> variance ~0.0011 (m/s^2)^2.
+    # Inflated ~9x from that in-water static measurement to leave margin for real underway vibration,
+    # replacing the prior 100x inflation which was based on a dry-bench baseline and made the accelerometer
+    # essentially unusable. DVL's own per-packet covariance is tighter and takes priority whenever a velocity
+    # report lands; this value only governs how much the EKF can lean on accel between DVL updates/dropouts.
+    linear_acceleration_covariance: [0.01,   0.0,    0.0,
+                                     0.0,    0.01,   0.0,
+                                     0.0,    0.0,    0.01]
     magnetic_covariance: [0.01,  0.0,   0.0,
                          0.0,   0.01,  0.0,
                          0.0,   0.0,   0.01]

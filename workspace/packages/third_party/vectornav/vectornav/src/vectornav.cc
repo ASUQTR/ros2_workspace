@@ -161,6 +161,14 @@ Vectornav::Vectornav(const rclcpp::NodeOptions & options) : Node("vectornav", op
      0.0, 1.0, 0.0,
      0.0, 0.0, 1.0});
 
+  // VPE Basic Control (Register 35, section 7.1.1)
+  // headingMode: 0=Absolute, 1=Relative, 2=Indoor. Default is Indoor to match this sub's
+  // documented ESC/buck-converter EMI corrupting the magnetometer — Indoor mode rejects
+  // magnetic disturbances instead of always trusting them. Override via YAML vpeBasicControl.*
+  declare_parameter<int>("vpeBasicControl.headingMode", vn::protocol::uart::HeadingMode::HEADINGMODE_INDOOR);
+  declare_parameter<int>("vpeBasicControl.filteringMode", vn::protocol::uart::VpeMode::VPEMODE_MODE1);
+  declare_parameter<int>("vpeBasicControl.tuningMode", vn::protocol::uart::VpeMode::VPEMODE_MODE1);
+
   // Geographic location for onboard WMM2016 magnetic model and EGM96 gravity model (Register 83).
   // Set enabled=true and provide lat/lon/alt so the IMU computes accurate local field references.
   // Change at runtime: ros2 param set /vectornav geo_location.latitude <deg>
@@ -347,10 +355,11 @@ void Vectornav::execute_cal(const std::shared_ptr<MagCalGH> goal_handle)
   // Cannot test for this mode as it sets, then changes immediately
   vs_->writeMagnetometerCalibrationControl(magControl);
 
-  // Set VPE basic control to absolute
+  // Set VPE basic control using the configured heading mode (not hardcoded Absolute) so that
+  // running magnetic calibration doesn't silently revert e.g. Indoor mode set for EMI environments.
   vn::sensors::VpeBasicControlRegister vpeControl = {
     vn::protocol::uart::VpeEnable::VPEENABLE_ENABLE,
-    vn::protocol::uart::HeadingMode::HEADINGMODE_ABSOLUTE,
+    (vn::protocol::uart::HeadingMode)get_parameter("vpeBasicControl.headingMode").as_int(),
     vn::protocol::uart::VpeMode::VPEMODE_MODE1,  // By default these seem to be mode 1 not off
     vn::protocol::uart::VpeMode::VPEMODE_MODE1   // By default these seem to be mode 1 not off
   };
@@ -723,6 +732,19 @@ bool Vectornav::configure_sensor()
     RCLCPP_INFO(get_logger(),
       "ReferenceFrameRotation (applied):  [%.3f %.3f %.3f | %.3f %.3f %.3f | %.3f %.3f %.3f]",
       C[0], C[1], C[2], C[3], C[4], C[5], C[6], C[7], C[8]);
+  }
+
+  // VPE Basic Control (Register 35, section 7.1.1)
+  {
+    vn::sensors::VpeBasicControlRegister vpeControl = {
+      vn::protocol::uart::VpeEnable::VPEENABLE_ENABLE,
+      (vn::protocol::uart::HeadingMode)get_parameter("vpeBasicControl.headingMode").as_int(),
+      (vn::protocol::uart::VpeMode)get_parameter("vpeBasicControl.filteringMode").as_int(),
+      (vn::protocol::uart::VpeMode)get_parameter("vpeBasicControl.tuningMode").as_int()
+    };
+    vs_->writeVpeBasicControl(vpeControl);
+    RCLCPP_INFO(get_logger(), "VPE Basic Control: headingMode=%d, filteringMode=%d, tuningMode=%d",
+      vpeControl.headingMode, vpeControl.filteringMode, vpeControl.tuningMode);
   }
 
   // Geographic Location / Reference Vectors (Register 83)
