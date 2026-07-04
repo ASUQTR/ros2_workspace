@@ -7,7 +7,7 @@ RUN rm -f /etc/apt/sources.list.d/ros*.list && \
     echo "deb [arch=arm64 signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu focal main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
     
 # 2. Install standard system/pip dependencies first
-RUN apt-get update && apt-get install -y python3-pip libserial-dev python3-vcstool && apt-get clean
+RUN apt-get update && apt-get install -y python3-pip python3-opencv libserial-dev python3-vcstool && apt-get clean
 
 # 3. Create a separate workspace strictly for 3rd party packages
 RUN mkdir -p /opt/underlay_ws/src
@@ -53,4 +53,3 @@ RUN echo "export OPENBLAS_NUM_THREADS=1" >> ~/.bashrc
 RUN echo "export OMP_NUM_THREADS=1" >> ~/.bashrc
 RUN echo "export MKL_NUM_THREADS=1" >> ~/.bashrc
 RUN echo "export NUMEXPR_NUM_THREADS=1" >> ~/.bashrc
-

@@ -61,6 +61,7 @@ class DVLNode(Node):
         
         # State variables
         self.invalid_velocity_count = 0
+        self.total_velocity_count = 0
 
         # Initialization Routine
         self._verify_hardware_versions()
@@ -133,11 +134,15 @@ class DVLNode(Node):
         if len(fields) != 12:
             return
 
+        self.total_velocity_count += 1
+
         report_is_valid = fields[4]
         if report_is_valid != 'y':
             self.invalid_velocity_count += 1
+            error_pct = 100.0 * self.invalid_velocity_count / self.total_velocity_count
             self.get_logger().warn(
-                f'Invalid velocity report (Total: {self.invalid_velocity_count})', 
+                f'Invalid velocity report (Total: {self.invalid_velocity_count}/{self.total_velocity_count}, '
+                f'{error_pct:.1f}%)',
                 throttle_duration_sec=1.0
             )
             return

@@ -18,6 +18,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <std_srvs/srv/trigger.hpp>
 #include <vectornav_msgs/msg/attitude_group.hpp>
 #include <vectornav_msgs/msg/common_group.hpp>
 #include <vectornav_msgs/msg/gps_group.hpp>
@@ -57,12 +58,13 @@ namespace vectornav {
       const rclcpp_action::GoalUUID & uuid, std::shared_ptr<const MagCal::Goal> goal);
     rclcpp_action::CancelResponse handle_cal_cancel(const std::shared_ptr<MagCalGH> goal_handle);
     void execute_cal(const std::shared_ptr<MagCalGH> goal_handle);
-    /**
-    * Callback to take twist message and pass it to VN as velocity aiding 
-    *
-    * \param msg Shared pointer to ROS2 geometry_msgs/Twist message containing velocity information
-    */
     void vel_aiding_cb(const geometry_msgs::msg::Twist::SharedPtr msg);
+    void apply_geo_location(double lat, double lon, double alt_m, double year);
+    void get_reference_vectors_cb(
+      const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+      std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+    rcl_interfaces::msg::SetParametersResult on_set_parameters_callback(
+      const std::vector<rclcpp::Parameter> & parameters);
 
     //
     // Parsing functions
@@ -125,6 +127,7 @@ namespace vectornav {
 
     /// Publishers
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_raw_pub_;
     rclcpp::Publisher<vectornav_msgs::msg::CommonGroup>::SharedPtr pub_common_;
     rclcpp::Publisher<vectornav_msgs::msg::TimeGroup>::SharedPtr pub_time_;
     rclcpp::Publisher<vectornav_msgs::msg::ImuGroup>::SharedPtr pub_imu_;
@@ -143,6 +146,12 @@ namespace vectornav {
     /// Action servers for calibration
     rclcpp_action::Server<vectornav_msgs::action::MagCal>::SharedPtr server_mag_cal_;
     std::thread action_thread_;
+
+    /// Services
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr srv_get_reference_vectors_;
+
+    /// Parameter callback handle
+    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
 
   };
 }

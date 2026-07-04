@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <queue>
+#include <sstream>
 #include <string>
 
 #if __linux__ || __CYGWIN__
@@ -22,6 +23,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
+#include <std_srvs/srv/trigger.hpp>
 // VectorNav libvncxx
 #include "vectornav.hpp"
 #include "vn/util.h"
@@ -144,6 +146,31 @@ Vectornav::Vectornav(const rclcpp::NodeOptions & options) : Node("vectornav", op
   /// GPS Antenna A Offset (8.2.2)
   /// GPS Compass Baseline (8.2.3)
 
+  // Acceleration Compensation (Register 25, section 6.2.2)
+  // Default is identity + zero bias (no correction). Override via YAML accelCompensation.C / .B
+  declare_parameter<std::vector<double>>("accelCompensation.C",
+    {1.0, 0.0, 0.0,
+     0.0, 1.0, 0.0,
+     0.0, 0.0, 1.0});
+  declare_parameter<std::vector<double>>("accelCompensation.B", {0.0, 0.0, 0.0});
+
+  // Reference Frame Rotation (Register 26, section 7.2.4)
+  // Default is identity (no correction). Override via YAML referenceFrameRotation.C
+  declare_parameter<std::vector<double>>("referenceFrameRotation.C",
+    {1.0, 0.0, 0.0,
+     0.0, 1.0, 0.0,
+     0.0, 0.0, 1.0});
+
+  // Geographic location for onboard WMM2016 magnetic model and EGM96 gravity model (Register 83).
+  // Set enabled=true and provide lat/lon/alt so the IMU computes accurate local field references.
+  // Change at runtime: ros2 param set /vectornav geo_location.latitude <deg>
+  declare_parameter<bool>("geo_location.enabled", false);
+  declare_parameter<double>("geo_location.latitude", 0.0);
+  declare_parameter<double>("geo_location.longitude", 0.0);
+  declare_parameter<double>("geo_location.altitude_m", 0.0);
+  declare_parameter<double>("geo_location.year", 2026.47);
+  declare_parameter<int>("geo_location.recalc_threshold_m", 1000);
+
   // Message Header
   declare_parameter<std::string>("frame_id", "vectornav");
 
@@ -153,6 +180,7 @@ Vectornav::Vectornav(const rclcpp::NodeOptions & options) : Node("vectornav", op
   
   // Add standard IMU publisher:
   imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("vectornav/imu", 10);
+  imu_raw_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("vectornav/imu_raw", 10);
   pub_time_ = this->create_publisher<vectornav_msgs::msg::TimeGroup>("vectornav/raw/time", 10);
   pub_imu_ = this->create_publisher<vectornav_msgs::msg::ImuGroup>("vectornav/raw/imu", 10);
   pub_gps_ = this->create_publisher<vectornav_msgs::msg::GpsGroup>("vectornav/raw/gps", 10);
@@ -169,6 +197,15 @@ Vectornav::Vectornav(const rclcpp::NodeOptions & options) : Node("vectornav", op
     this, "vectornav/mag_cal", std::bind(&Vectornav::handle_cal_goal, this, _1, _2),
     std::bind(&Vectornav::handle_cal_cancel, this, _1),
     std::bind(&Vectornav::handle_cal_accept, this, _1));
+
+  // Service: read back current magnetic/gravity reference vectors and geo location config
+  srv_get_reference_vectors_ = create_service<std_srvs::srv::Trigger>(
+    "vectornav/get_reference_vectors",
+    std::bind(&Vectornav::get_reference_vectors_cb, this, _1, _2));
+
+  // Live parameter updates for geo_location fields
+  param_callback_handle_ = add_on_set_parameters_callback(
+    std::bind(&Vectornav::on_set_parameters_callback, this, _1));
 
   if (!optimize_serial_communication(port)) {
     RCLCPP_WARN(get_logger(), "time of message delivery may be compromised!");
@@ -656,6 +693,49 @@ bool Vectornav::configure_sensor()
   // 5.2.13
   vs_->writeBinaryOutput3(boConfigs.at(2));
 
+  // Acceleration Compensation (Register 25, section 6.2.2)
+  {
+    auto C = get_parameter("accelCompensation.C").as_double_array();
+    auto B = get_parameter("accelCompensation.B").as_double_array();
+    vn::math::mat3f accelC(C[0], C[1], C[2],
+                           C[3], C[4], C[5],
+                           C[6], C[7], C[8]);
+    vn::math::vec3f accelB(B[0], B[1], B[2]);
+    vs_->writeAccelerationCompensation(accelC, accelB);
+    RCLCPP_INFO(get_logger(), "Accel compensation C[2][2] = %.4f, B = (%.4f, %.4f, %.4f)",
+      C[8], B[0], B[1], B[2]);
+  }
+
+  // Reference Frame Rotation (Register 26, section 7.2.4)
+  {
+    auto hw = vs_->readReferenceFrameRotation();
+    RCLCPP_INFO(get_logger(),
+      "ReferenceFrameRotation (hardware): [%.3f %.3f %.3f | %.3f %.3f %.3f | %.3f %.3f %.3f]",
+      hw(0,0), hw(0,1), hw(0,2),
+      hw(1,0), hw(1,1), hw(1,2),
+      hw(2,0), hw(2,1), hw(2,2));
+
+    auto C = get_parameter("referenceFrameRotation.C").as_double_array();
+    vn::math::mat3f rfr(C[0], C[1], C[2],
+                        C[3], C[4], C[5],
+                        C[6], C[7], C[8]);
+    vs_->writeReferenceFrameRotation(rfr);
+    RCLCPP_INFO(get_logger(),
+      "ReferenceFrameRotation (applied):  [%.3f %.3f %.3f | %.3f %.3f %.3f | %.3f %.3f %.3f]",
+      C[0], C[1], C[2], C[3], C[4], C[5], C[6], C[7], C[8]);
+  }
+
+  // Geographic Location / Reference Vectors (Register 83)
+  if (get_parameter("geo_location.enabled").as_bool()) {
+    apply_geo_location(
+      get_parameter("geo_location.latitude").as_double(),
+      get_parameter("geo_location.longitude").as_double(),
+      get_parameter("geo_location.altitude_m").as_double(),
+      get_parameter("geo_location.year").as_double());
+  } else {
+    RCLCPP_INFO(get_logger(), "Geo location not enabled (set geo_location.enabled=true to activate)");
+  }
+
   // Verify that the device family is capable of supporting GPS
   if (vs_->determineDeviceFamily() != vn::sensors::VnSensor::VnSensor_Family_Vn100) {
     try {
@@ -832,6 +912,36 @@ imu_msg.linear_acceleration_covariance = {
 };
   // Publish
   node->imu_pub_->publish(imu_msg);
+
+  // Publish raw (uncompensated) IMU data
+  if (cd.hasAccelerationUncompensated() || cd.hasAngularRateUncompensated())
+  {
+    sensor_msgs::msg::Imu raw_msg;
+    raw_msg.header.stamp = timestamp;
+    raw_msg.header.frame_id = node->get_parameter("frame_id").as_string();
+    raw_msg.orientation = imu_msg.orientation;
+    raw_msg.orientation_covariance = imu_msg.orientation_covariance;
+
+    if (cd.hasAngularRateUncompensated())
+    {
+      vn::math::vec3f gyro = cd.angularRateUncompensated();
+      raw_msg.angular_velocity.x = gyro[0];
+      raw_msg.angular_velocity.y = -gyro[1];
+      raw_msg.angular_velocity.z = -gyro[2];
+    }
+    raw_msg.angular_velocity_covariance = imu_msg.angular_velocity_covariance;
+
+    if (cd.hasAccelerationUncompensated())
+    {
+      vn::math::vec3f accel = cd.accelerationUncompensated();
+      raw_msg.linear_acceleration.x = accel[0];
+      raw_msg.linear_acceleration.y = -accel[1];
+      raw_msg.linear_acceleration.z = -accel[2];
+    }
+    raw_msg.linear_acceleration_covariance = imu_msg.linear_acceleration_covariance;
+
+    node->imu_raw_pub_->publish(raw_msg);
+  }
 }
 
 //
@@ -954,5 +1064,99 @@ vectornav_msgs::msg::InsStatus Vectornav::toMsg(const vn::protocol::uart::InsSta
   lhs.gps_compass = rhs & 0x0200;
   return lhs;
 }
+
+/// Writes the Reference Vector Configuration register (Reg 83) with the given geographic position
+/// so the IMU uses its onboard WMM2016 and EGM96 models to compute local mag/gravity references.
+/// The change is RAM-only; call writeSettings() to persist across power cycles.
+void Vectornav::apply_geo_location(double lat, double lon, double alt_m, double year)
+{
+  vn::sensors::ReferenceVectorConfigurationRegister rvConfig;
+  rvConfig.useMagModel = true;
+  rvConfig.useGravityModel = true;
+  rvConfig.recalcThreshold = static_cast<uint32_t>(
+    get_parameter("geo_location.recalc_threshold_m").as_int());
+  rvConfig.year = static_cast<float>(year);
+  rvConfig.position = vn::math::vec3d(lat, lon, alt_m);
+  vs_->writeReferenceVectorConfiguration(rvConfig);
+  RCLCPP_INFO(get_logger(),
+    "Geo location set: lat=%.6f deg, lon=%.6f deg, alt=%.1f m, year=%.2f",
+    lat, lon, alt_m, year);
+}
+
+/// Service callback: reads Register 83 and the computed mag/gravity reference vectors and returns
+/// them as a human-readable string for runtime validation.
+/// Usage: ros2 service call /vectornav/get_reference_vectors std_srvs/srv/Trigger
+void Vectornav::get_reference_vectors_cb(
+  const std::shared_ptr<std_srvs::srv::Trigger::Request> /*request*/,
+  std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+{
+  if (!vs_ || !vs_->verifySensorConnectivity()) {
+    response->success = false;
+    response->message = "IMU not connected";
+    return;
+  }
+
+  auto rvConfig = vs_->readReferenceVectorConfiguration();
+  auto magGrav = vs_->readMagneticAndGravityReferenceVectors();
+
+  std::ostringstream ss;
+  ss << "Reference Vector Configuration (register 83):\n";
+  ss << "  useMagModel:     " << (rvConfig.useMagModel ? "true" : "false") << "\n";
+  ss << "  useGravityModel: " << (rvConfig.useGravityModel ? "true" : "false") << "\n";
+  ss << "  recalcThreshold: " << rvConfig.recalcThreshold << " m\n";
+  ss << "  year:            " << rvConfig.year << "\n";
+  ss << "  position:        lat=" << rvConfig.position[0]
+     << " deg, lon=" << rvConfig.position[1]
+     << " deg, alt=" << rvConfig.position[2] << " m\n";
+  ss << "Magnetic Reference (NED): ("
+     << magGrav.magRef[0] << ", " << magGrav.magRef[1] << ", " << magGrav.magRef[2] << ") Gauss\n";
+  ss << "Gravity Reference  (NED): ("
+     << magGrav.accRef[0] << ", " << magGrav.accRef[1] << ", " << magGrav.accRef[2] << ") m/s^2";
+
+  response->success = true;
+  response->message = ss.str();
+}
+
+/// Parameter callback: applies a new geo location immediately when any geo_location.* param changes.
+rcl_interfaces::msg::SetParametersResult Vectornav::on_set_parameters_callback(
+  const std::vector<rclcpp::Parameter> & parameters)
+{
+  rcl_interfaces::msg::SetParametersResult result;
+  result.successful = true;
+
+  // Collect the latest values, falling back to the current param store for unchanged ones.
+  double lat = get_parameter("geo_location.latitude").as_double();
+  double lon = get_parameter("geo_location.longitude").as_double();
+  double alt = get_parameter("geo_location.altitude_m").as_double();
+  double year = get_parameter("geo_location.year").as_double();
+  bool enabled = get_parameter("geo_location.enabled").as_bool();
+  bool geo_changed = false;
+
+  for (const auto & param : parameters) {
+    if (param.get_name() == "geo_location.latitude") {
+      lat = param.as_double(); geo_changed = true;
+    } else if (param.get_name() == "geo_location.longitude") {
+      lon = param.as_double(); geo_changed = true;
+    } else if (param.get_name() == "geo_location.altitude_m") {
+      alt = param.as_double(); geo_changed = true;
+    } else if (param.get_name() == "geo_location.year") {
+      year = param.as_double(); geo_changed = true;
+    } else if (param.get_name() == "geo_location.enabled") {
+      enabled = param.as_bool(); geo_changed = true;
+    }
+  }
+
+  if (geo_changed && enabled) {
+    if (!vs_ || !vs_->verifySensorConnectivity()) {
+      result.successful = false;
+      result.reason = "IMU not connected — geo location not applied";
+      return result;
+    }
+    apply_geo_location(lat, lon, alt, year);
+  }
+
+  return result;
+}
+
 }  // namespace vectornav
 RCLCPP_COMPONENTS_REGISTER_NODE(vectornav::Vectornav)

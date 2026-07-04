@@ -2,6 +2,8 @@
 build/
 install/
 log/
+workspace/recordings/
+*.mcap
 
 # --- Python ---
 __pycache__/
@@ -28,3 +30,10 @@ Thumbs.db
 *.swp
 *.o
 *.so
+sensors_documentation/A50_A125 - Water Linked Documentation.md
+sensors_documentation/Bar High-Resolution Depth_Pressure Sensors.md
+sensors_documentation/Bar30.md
+sensors_documentation/Integration overview - Water Linked Documentation.md
+sensors_documentation/T200 Thruster_ ROV thruster for marine robotics propulsion.md
+sensors_documentation/VN-100-Datasheet-2020 (2).md
+sensors_documentation/Datasheet-DVLA50-Screen-RGB-v4 (1).md

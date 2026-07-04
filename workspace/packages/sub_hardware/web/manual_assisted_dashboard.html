@@ -1,0 +1,3185 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ASUQTR Pilot Dashboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0d10;
+      --surface: #151a1f;
+      --surface-2: #1d242b;
+      --line: #303943;
+      --text: #eef2f6;
+      --muted: #a8b3bf;
+      --quiet: #75808b;
+      --blue: #4f8cff;
+      --green: #31c67a;
+      --amber: #f1b84b;
+      --red: #ef5753;
+      --shadow: 0 16px 34px rgba(0, 0, 0, 0.32);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      background:
+        linear-gradient(180deg, rgba(79, 140, 255, 0.08), transparent 260px),
+        var(--bg);
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      min-height: 42px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 0 14px;
+      color: var(--text);
+      background: var(--surface-2);
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: #4b5967;
+      background: #26303a;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .primary {
+      background: var(--blue);
+      color: #fff;
+    }
+
+    .primary:hover {
+      border-color: #7aaaed;
+      background: #659cff;
+    }
+
+    .danger {
+      background: var(--red);
+      color: #fff;
+    }
+
+    .danger:hover {
+      border-color: #ffaaa7;
+      background: #ff6864;
+    }
+
+    .recording {
+      background: #7a3df0;
+      color: #fff;
+    }
+
+    .recording:hover {
+      border-color: #b79aff;
+      background: #8752f3;
+    }
+
+    .recording.active {
+      border-color: #ffd27a;
+      background: var(--amber);
+      color: #1b1303;
+    }
+
+    .ghost {
+      background: transparent;
+      border-color: var(--line);
+    }
+
+    input {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 11px;
+      color: var(--text);
+      background: #0f1317;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.18);
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+      gap: 16px;
+      min-height: 100vh;
+      padding: 16px;
+    }
+
+    .tab-nav {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 6px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    .tab-nav button {
+      min-width: 140px;
+      background: transparent;
+    }
+
+    .tab-nav button.active {
+      background: var(--blue);
+      color: #fff;
+    }
+
+    [data-dashboard-tab].tab-hidden {
+      display: none;
+    }
+
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      gap: 8px;
+    }
+
+    .matrix-grid .field input {
+      min-height: 38px;
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0f1317;
+    }
+
+    .segmented.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .segmented button {
+      min-height: 38px;
+      background: transparent;
+    }
+
+    .segmented button.active {
+      background: var(--blue);
+      color: #fff;
+    }
+
+    .sidebar,
+    .main {
+      min-width: 0;
+    }
+
+    .sidebar {
+      display: grid;
+      align-content: start;
+      gap: 12px;
+    }
+
+    .main {
+      display: grid;
+      grid-template-rows: auto minmax(300px, 1fr) auto;
+      gap: 16px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(21, 26, 31, 0.94);
+      box-shadow: var(--shadow);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 54px;
+      padding: 14px 14px 10px;
+      border-bottom: 1px solid rgba(48, 57, 67, 0.72);
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 750;
+      letter-spacing: 0;
+    }
+
+    .panel-kicker {
+      margin: 2px 0 0;
+      color: var(--quiet);
+      font-size: 12px;
+    }
+
+    .panel-body {
+      padding: 14px;
+    }
+
+    .brand {
+      display: grid;
+      gap: 4px;
+      padding: 3px 2px 8px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 25px;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    .brand .sub {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .status-card {
+      min-height: 76px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #10151a;
+    }
+
+    .status-label {
+      color: var(--quiet);
+      font-size: 12px;
+    }
+
+    .status-value {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 14px;
+      font-weight: 720;
+      min-width: 0;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--quiet);
+      box-shadow: 0 0 0 4px rgba(117, 128, 139, 0.14);
+    }
+
+    .dot.ok {
+      background: var(--green);
+      box-shadow: 0 0 0 4px rgba(49, 198, 122, 0.15);
+    }
+
+    .dot.warn {
+      background: var(--amber);
+      box-shadow: 0 0 0 4px rgba(241, 184, 75, 0.15);
+    }
+
+    .dot.bad {
+      background: var(--red);
+      box-shadow: 0 0 0 4px rgba(239, 87, 83, 0.15);
+    }
+
+    .field-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .field label {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 680;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .button-row.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .readout-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      min-height: 70px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #10151a;
+    }
+
+    .metric-label {
+      color: var(--quiet);
+      font-size: 12px;
+    }
+
+    .metric-value {
+      margin-top: 6px;
+      font-size: 18px;
+      font-weight: 760;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .profile-map {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .pilot-profile-map {
+      margin-bottom: 10px;
+    }
+
+    .profile-chip {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 6px 9px;
+      background: #10151a;
+      color: var(--muted);
+      font-weight: 720;
+      min-height: 40px;
+    }
+
+    .profile-chip span {
+      display: block;
+      color: var(--quiet);
+      font-size: 12px;
+      font-weight: 680;
+      margin-bottom: 2px;
+    }
+
+    .profile-chip.active {
+      border-color: rgba(49, 198, 122, 0.65);
+      background: rgba(49, 198, 122, 0.12);
+      color: var(--text);
+    }
+
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(150px, 1fr));
+      gap: 8px;
+    }
+
+    .telemetry-value {
+      margin-top: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 15px;
+      font-weight: 720;
+      white-space: nowrap;
+    }
+
+    .topic-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .topic-table th,
+    .topic-table td {
+      padding: 9px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+    }
+
+    .topic-table th {
+      color: var(--quiet);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .topic-table td:last-child,
+    .topic-table th:last-child {
+      text-align: right;
+    }
+
+    .thruster-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      gap: 8px;
+    }
+
+    .thruster-value {
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 16px;
+      font-weight: 750;
+    }
+
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(260px, 1fr));
+      gap: 10px;
+    }
+
+    .chart-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0a0e12;
+      overflow: hidden;
+    }
+
+    .chart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    .chart-header span:last-child {
+      color: var(--quiet);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-weight: 680;
+    }
+
+    .chart-card canvas {
+      display: block;
+      width: 100%;
+      height: 180px;
+    }
+
+    .debug-action-row {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .event-log {
+      display: grid;
+      gap: 6px;
+      max-height: 280px;
+      margin: 0;
+      padding: 0;
+      overflow-y: auto;
+      list-style: none;
+    }
+
+    .event-item {
+      display: grid;
+      grid-template-columns: 62px minmax(0, 1fr);
+      gap: 8px;
+      padding: 7px 8px;
+      border-left: 3px solid var(--line);
+      background: #0f1317;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .event-item.info {
+      border-left-color: var(--blue);
+    }
+
+    .event-item.ok {
+      border-left-color: var(--green);
+    }
+
+    .event-item.warn {
+      border-left-color: var(--amber);
+    }
+
+    .event-item.error {
+      border-left-color: var(--red);
+    }
+
+    .event-time {
+      color: var(--quiet);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .event-source {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .camera-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(260px, 1fr));
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .camera {
+      position: relative;
+      display: grid;
+      grid-template-rows: auto auto;
+      min-height: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #06080a;
+    }
+
+    .camera-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .camera img {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 16 / 9;
+      object-fit: contain;
+      object-position: center;
+      background: #040608;
+    }
+
+    .camera.offline img {
+      visibility: hidden;
+    }
+
+    .camera-placeholder {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      top: 39px;
+      display: none;
+      place-items: center;
+      padding: 18px;
+      color: var(--quiet);
+      text-align: center;
+      font-size: 13px;
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%),
+        linear-gradient(225deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%),
+        #05080b;
+      background-size: 28px 28px;
+    }
+
+    .camera.offline .camera-placeholder {
+      display: grid;
+    }
+
+    .control-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .pilot-layout {
+      display: grid;
+      grid-template-columns: minmax(310px, 420px) minmax(0, 1fr);
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .gamepad-visual {
+      position: relative;
+      min-height: 292px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        radial-gradient(circle at 28% 42%, rgba(79, 140, 255, 0.1), transparent 28%),
+        radial-gradient(circle at 72% 42%, rgba(49, 198, 122, 0.1), transparent 28%),
+        #10151a;
+      overflow: hidden;
+    }
+
+    .gamepad-shell {
+      position: absolute;
+      inset: 42px 34px 34px;
+      border: 1px solid #3b4652;
+      border-radius: 92px 92px 70px 70px;
+      background: #171d23;
+      box-shadow: inset 0 -18px 36px rgba(0, 0, 0, 0.25);
+    }
+
+    .stick {
+      position: absolute;
+      width: 86px;
+      height: 86px;
+      border: 1px solid #3d4854;
+      border-radius: 50%;
+      background: #0b0f13;
+    }
+
+    .stick.left {
+      left: 68px;
+      top: 112px;
+    }
+
+    .stick.right {
+      right: 68px;
+      top: 112px;
+    }
+
+    .stick-dot {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 28px;
+      height: 28px;
+      margin: -14px 0 0 -14px;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 0 5px rgba(79, 140, 255, 0.15);
+      transform: translate(0, 0);
+    }
+
+    .trigger {
+      position: absolute;
+      top: 18px;
+      width: 110px;
+      height: 18px;
+      border: 1px solid #414d59;
+      border-radius: 999px;
+      background: #10151a;
+      overflow: hidden;
+    }
+
+    .trigger.left {
+      left: 54px;
+    }
+
+    .trigger.right {
+      right: 54px;
+    }
+
+    .trigger-fill {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: var(--green);
+    }
+
+    .face-buttons {
+      position: absolute;
+      right: 54px;
+      top: 92px;
+      width: 108px;
+      height: 108px;
+    }
+
+    .face-button,
+    .small-button {
+      position: absolute;
+      display: grid;
+      place-items: center;
+      border: 1px solid #465360;
+      border-radius: 50%;
+      color: var(--muted);
+      background: #0b0f13;
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    .face-button {
+      width: 34px;
+      height: 34px;
+    }
+
+    .face-button.active,
+    .small-button.active {
+      border-color: rgba(49, 198, 122, 0.8);
+      color: #eafff3;
+      background: rgba(49, 198, 122, 0.22);
+    }
+
+    .face-a { left: 37px; bottom: 0; }
+    .face-b { right: 0; top: 37px; }
+    .face-x { left: 0; top: 37px; }
+    .face-y { left: 37px; top: 0; }
+
+    .small-button {
+      width: 44px;
+      height: 24px;
+      border-radius: 999px;
+      font-size: 10px;
+    }
+
+    .small-button.select {
+      left: calc(50% - 54px);
+      top: 150px;
+    }
+
+    .small-button.start {
+      left: calc(50% + 10px);
+      top: 150px;
+    }
+
+    .axis-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 11px;
+      background: #10151a;
+    }
+
+    .axis-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 680;
+    }
+
+    .axis-value {
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .bar {
+      position: relative;
+      height: 9px;
+      margin-top: 10px;
+      border-radius: 999px;
+      background: #2a323b;
+      overflow: hidden;
+    }
+
+    .bar::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 1px;
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    .bar-fill {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 0;
+      background: var(--blue);
+      border-radius: 999px;
+    }
+
+    .button-map {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .pad-button {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      color: var(--quiet);
+      background: #10151a;
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    .pad-button.active {
+      border-color: rgba(49, 198, 122, 0.8);
+      color: #dff9eb;
+      background: rgba(49, 198, 122, 0.18);
+    }
+
+    .debug {
+      max-height: 220px;
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #090c0f;
+      color: #cbd5df;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .tiny {
+      color: var(--quiet);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    @media (max-width: 1080px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .main {
+        grid-template-rows: auto auto auto;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .app {
+        padding: 10px;
+      }
+
+      .status-grid,
+      .camera-grid,
+      .control-grid,
+      .pilot-layout,
+      .profile-map,
+      .button-row,
+      .button-row.three,
+      .readout-grid,
+      .matrix-grid,
+      .telemetry-grid,
+      .thruster-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .tab-nav {
+        overflow-x: auto;
+      }
+
+      .tab-nav button {
+        min-width: 110px;
+      }
+
+      .button-map {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .brand h1 {
+        font-size: 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <nav class="tab-nav" aria-label="Dashboard views">
+      <button class="active" type="button" data-tab-button="pilotage">Pilotage</button>
+      <button type="button" data-tab-button="connection">Connexion</button>
+      <button type="button" data-tab-button="control">Controle</button>
+      <button type="button" data-tab-button="debug">Debug</button>
+    </nav>
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>ASUQTR Pilot Dashboard</h1>
+        <div class="sub">Manual assisted / ROSBridge</div>
+      </div>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Événements ROS</h2>
+            <p class="panel-kicker" id="eventCount">0 événement</p>
+          </div>
+          <button id="clearEventsBtn" class="ghost" type="button">Vider</button>
+        </div>
+        <div class="panel-body">
+          <ol id="eventLog" class="event-log" aria-live="polite"></ol>
+        </div>
+      </section>
+
+      <section class="panel" data-dashboard-tab="pilotage">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Commandes</h2>
+            <p class="panel-kicker">/dashboard/gamepad</p>
+          </div>
+        </div>
+        <div class="panel-body field-grid">
+          <div class="button-row">
+            <button id="armBtn" class="primary" type="button">Start / Arm</button>
+            <button id="stopBtn" class="danger" type="button">Select / Stop</button>
+          </div>
+          <div class="segmented">
+            <button id="manualAssistedModeBtn" class="active" type="button">Carotte LQR</button>
+            <button id="openLoopModeBtn" type="button">Boucle ouverte</button>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Limites profondeur NED (m, positif vers le bas)</div>
+            <div class="field-grid" style="margin-top: 8px;">
+              <label>
+                <input id="depthLimitsEnabled" type="checkbox" checked>
+                Limiter la profondeur
+              </label>
+              <div class="button-row three">
+                <div class="field">
+                  <label for="depthBaseTarget">Cible</label>
+                  <input id="depthBaseTarget" type="number" min="-1" max="10" step="0.05" value="0.5">
+                </div>
+                <div class="field">
+                  <label for="depthMinTarget">Min</label>
+                  <input id="depthMinTarget" type="number" min="-1" max="10" step="0.05" value="0.2">
+                </div>
+                <div class="field">
+                  <label for="depthMaxTarget">Max</label>
+                  <input id="depthMaxTarget" type="number" min="-1" max="10" step="0.05" value="0.5">
+                </div>
+              </div>
+              <button id="applyDepthLimitsBtn" class="ghost" type="button">Appliquer</button>
+              <div id="depthLimitsStatus" class="tiny">Non synchronise</div>
+            </div>
+          </div>
+          <button id="recordBtn" class="recording" type="button">Record</button>
+          <div class="field">
+            <label for="playbackPath">Trajet JSON</label>
+            <input id="playbackPath" type="text" value="/tmp/waypoints_latest.json" spellcheck="false">
+          </div>
+          <div class="button-row three">
+            <button id="loadPlaybackBtn" class="ghost" type="button">Load</button>
+            <button id="playPlaybackBtn" class="primary" type="button">Play</button>
+            <button id="stopPlaybackBtn" class="danger" type="button">Stop</button>
+          </div>
+          <div class="readout-grid">
+            <div class="metric">
+              <div class="metric-label">Mode</div>
+              <div id="modeMetric" class="metric-value">Local</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Playback</div>
+              <div id="playbackMetric" class="metric-value">-</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Profil LQR</div>
+              <div id="lqrProfileMetric" class="metric-value">Standstill</div>
+            </div>
+          </div>
+          <div class="tiny">Start arme le mode choisi. Select active l'arret logiciel. En carotte: A/Y/B changent Standstill/Forward/Forward + Turning. En boucle ouverte: stick gauche surge/sway, RT/LT heave, X/B roll, A/Y pitch, stick droit X yaw.</div>
+        </div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="debug">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Sécurité</h2>
+            <p class="panel-kicker">État reçu du sous-marin</p>
+          </div>
+        </div>
+        <div class="panel-body field-grid">
+          <div class="status-grid">
+            <div class="status-card">
+              <div class="status-label">PWM</div>
+              <div class="status-value"><span id="debugPwmDot" class="dot warn"></span><span id="debugPwmState">Inconnu</span></div>
+            </div>
+            <div class="status-card">
+              <div class="status-label">Mag 1</div>
+              <div class="status-value"><span id="debugKillDot" class="dot warn"></span><span id="debugKillState">Inconnue</span></div>
+            </div>
+            <div class="status-card">
+              <div class="status-label">Mag 2</div>
+              <div class="status-value"><span id="debugMag2Dot" class="dot warn"></span><span id="debugMag2State">Inconnue</span></div>
+            </div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Playback</div>
+            <div id="debugPlaybackState" class="metric-value">Aucun statut</div>
+            <div id="debugPlaybackDetail" class="tiny" style="margin-top: 6px;">-</div>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <section class="main">
+      <section class="panel tab-hidden" data-dashboard-tab="connection">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Liaisons</h2>
+            <p class="panel-kicker" id="hostHint">Pret</p>
+          </div>
+        </div>
+        <div class="panel-body field-grid">
+          <div class="field">
+            <label for="jetsonIp">Jetson / host</label>
+            <input id="jetsonIp" value="192.168.0.10" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="rosbridgeUrl">ROSBridge</label>
+            <input id="rosbridgeUrl" value="ws://192.168.0.10:9090" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="cameraUrl">Fallback cameras physiques</label>
+            <input id="cameraUrl" value="http://192.168.0.10:6969" autocomplete="off">
+          </div>
+          <div class="button-row three">
+            <button id="localBtn" class="ghost" type="button">Local</button>
+            <button id="jetsonBtn" class="ghost" type="button">Jetson</button>
+            <button id="connectBtn" class="primary" type="button">Connecter</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="connection">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Etat</h2>
+            <p class="panel-kicker" id="publishRate">0 Hz</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="status-grid">
+            <div class="status-card">
+              <div class="status-label">ROS</div>
+              <div class="status-value"><span id="rosDot" class="dot bad"></span><span id="rosText">Hors ligne</span></div>
+            </div>
+            <div class="status-card">
+              <div class="status-label">Gamepad</div>
+              <div class="status-value"><span id="gamepadDot" class="dot bad"></span><span id="gamepadText">Absent</span></div>
+            </div>
+            <div class="status-card">
+              <div class="status-label">Joy</div>
+              <div class="status-value"><span id="pubDot" class="dot warn"></span><span id="pubText">En attente</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" data-dashboard-tab="pilotage">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Cameras</h2>
+            <p class="panel-kicker" id="cameraHint">Flux non charge</p>
+          </div>
+          <button id="reloadCamerasBtn" class="ghost" type="button">Recharger</button>
+        </div>
+        <div class="panel-body camera-grid">
+          <article id="cam1Card" class="camera offline">
+            <div class="camera-title"><span>Avant</span><span id="cam1State">-</span></div>
+            <img id="cam1" alt="Camera avant">
+            <div class="camera-placeholder">Camera non detectee</div>
+          </article>
+          <article id="cam2Card" class="camera offline">
+            <div class="camera-title"><span>Dessous</span><span id="cam2State">-</span></div>
+            <img id="cam2" alt="Camera dessous">
+            <div class="camera-placeholder">Camera non detectee</div>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel" data-dashboard-tab="pilotage">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Entrees pilote</h2>
+            <p class="panel-kicker" id="gamepadName">Aucune manette</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="profile-map pilot-profile-map">
+            <div id="pilotProfileStandstill" class="profile-chip active"><span>A</span>Standstill</div>
+            <div id="pilotProfileForward" class="profile-chip"><span>Y</span>Forward</div>
+            <div id="pilotProfileTurning" class="profile-chip"><span>B</span>Forward + Turning</div>
+          </div>
+          <div class="pilot-layout">
+            <div class="gamepad-visual" aria-label="Gamepad state">
+              <div class="gamepad-shell"></div>
+              <div class="trigger left"><span id="ltFill" class="trigger-fill"></span></div>
+              <div class="trigger right"><span id="rtFill" class="trigger-fill"></span></div>
+              <div class="stick left"><span id="leftStickDot" class="stick-dot"></span></div>
+              <div class="stick right"><span id="rightStickDot" class="stick-dot"></span></div>
+              <div class="face-buttons">
+                <span id="faceA" class="face-button face-a">A</span>
+                <span id="faceB" class="face-button face-b">B</span>
+                <span id="faceX" class="face-button face-x">X</span>
+                <span id="faceY" class="face-button face-y">Y</span>
+              </div>
+              <span id="smallSelect" class="small-button select">Select</span>
+              <span id="smallStart" class="small-button start">Start</span>
+            </div>
+
+            <div class="control-grid">
+              <div class="axis-card" data-axis-card="leftX">
+                <div class="axis-top"><span>Left X / yaw</span><span class="axis-value" id="leftXValue">0.00</span></div>
+                <div class="bar"><span class="bar-fill" id="leftXBar"></span></div>
+              </div>
+              <div class="axis-card" data-axis-card="leftY">
+                <div class="axis-top"><span>Left Y / forward</span><span class="axis-value" id="leftYValue">0.00</span></div>
+                <div class="bar"><span class="bar-fill" id="leftYBar"></span></div>
+              </div>
+              <div class="axis-card" data-axis-card="vertical">
+                <div class="axis-top"><span>Triggers / depth</span><span class="axis-value" id="verticalValue">0.00</span></div>
+                <div class="bar"><span class="bar-fill" id="verticalBar"></span></div>
+              </div>
+              <div class="axis-card" data-axis-card="rightX">
+                <div class="axis-top"><span>Right X</span><span class="axis-value" id="rightXValue">0.00</span></div>
+                <div class="bar"><span class="bar-fill" id="rightXBar"></span></div>
+              </div>
+              <div class="axis-card" data-axis-card="rightY">
+                <div class="axis-top"><span>Right Y</span><span class="axis-value" id="rightYValue">0.00</span></div>
+                <div class="bar"><span class="bar-fill" id="rightYBar"></span></div>
+              </div>
+              <div class="axis-card" data-axis-card="buttons">
+                <div class="axis-top"><span>Buttons</span><span class="axis-value" id="buttonValue">0</span></div>
+                <div class="button-map">
+                  <span id="btnA" class="pad-button">A</span>
+                  <span id="btnB" class="pad-button">B</span>
+                  <span id="btnX" class="pad-button">X</span>
+                  <span id="btnY" class="pad-button">Y</span>
+                  <span id="btnSelect" class="pad-button">Select</span>
+                  <span id="btnStart" class="pad-button">Start</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="debug">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Santé des topics</h2>
+            <p class="panel-kicker">Fréquence calculée dans ce navigateur</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <table class="topic-table">
+            <thead><tr><th>Topic</th><th>État</th><th>Fréquence</th><th>Âge</th></tr></thead>
+            <tbody>
+              <tr><td>/odometry/filtered</td><td id="odomHealth">Attente</td><td id="odomRate">0 Hz</td><td id="odomAge">-</td></tr>
+              <tr><td>/control/target</td><td id="controlTargetHealth">Attente</td><td id="controlTargetRate">0 Hz</td><td id="controlTargetAge">-</td></tr>
+              <tr><td>/control/playback_target</td><td id="playbackTargetHealth">Attente</td><td id="playbackTargetRate">0 Hz</td><td id="playbackTargetAge">-</td></tr>
+              <tr><td>/thruster_cmd</td><td id="thrusterHealth">Attente</td><td id="thrusterRate">0 Hz</td><td id="thrusterAge">-</td></tr>
+              <tr><td>/playback/status</td><td id="playbackHealth">Attente</td><td id="playbackRate">0 Hz</td><td id="playbackAge">-</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="debug">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Odométrie EKF</h2>
+            <p class="panel-kicker">/odometry/filtered</p>
+          </div>
+        </div>
+        <div class="panel-body telemetry-grid">
+          <div class="metric"><div class="metric-label">Position ENU</div><div id="debugPosition" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Roll / Pitch / Yaw</div><div id="debugOrientation" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Vitesse linéaire</div><div id="debugLinearVelocity" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Vitesse angulaire</div><div id="debugAngularVelocity" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Profondeur NED</div><div id="debugDepth" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Frame</div><div id="debugOdomFrame" class="telemetry-value">-</div></div>
+        </div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="debug">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Cible active et erreur</h2>
+            <p class="panel-kicker">/control/target ou /control/playback_target</p>
+          </div>
+        </div>
+        <div class="panel-body telemetry-grid">
+          <div class="metric"><div class="metric-label">Source</div><div id="debugTargetSource" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Position cible</div><div id="debugTargetPosition" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Orientation cible</div><div id="debugTargetOrientation" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Erreur horizontale</div><div id="debugHorizontalError" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Erreur profondeur</div><div id="debugDepthError" class="telemetry-value">-</div></div>
+          <div class="metric"><div class="metric-label">Erreur yaw</div><div id="debugYawError" class="telemetry-value">-</div></div>
+        </div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="debug">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Graphiques temps réel</h2>
+            <p class="panel-kicker">Historique local du navigateur</p>
+          </div>
+          <button id="clearChartsBtn" class="ghost" type="button">Reset graphes</button>
+        </div>
+        <div class="panel-body chart-grid">
+          <article class="chart-card">
+            <div class="chart-header"><span>Yaw actuel / cible / erreur</span><span id="yawChartReadout">-</span></div>
+            <canvas id="yawChart" width="720" height="220"></canvas>
+          </article>
+          <article class="chart-card">
+            <div class="chart-header"><span>Profondeur actuelle / cible</span><span id="depthChartReadout">-</span></div>
+            <canvas id="depthChart" width="720" height="220"></canvas>
+          </article>
+          <article class="chart-card">
+            <div class="chart-header"><span>Vitesses angulaires</span><span id="angularRateChartReadout">-</span></div>
+            <canvas id="angularRateChart" width="720" height="220"></canvas>
+          </article>
+          <article class="chart-card">
+            <div class="chart-header"><span>Efforts thrusters min / max</span><span id="thrusterChartReadout">-</span></div>
+            <canvas id="thrusterChart" width="720" height="220"></canvas>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="debug">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Commandes thrusters</h2>
+            <p class="panel-kicker">/thruster_cmd, efforts en N</p>
+          </div>
+          <div id="debugThrusterMax" class="tiny">Max: -</div>
+        </div>
+        <div id="debugThrusterGrid" class="panel-body thruster-grid"></div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="debug">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Données brutes</h2>
+            <p class="panel-kicker">Derniers messages reçus</p>
+          </div>
+          <button id="clearDebugBtn" class="ghost" type="button">Vider</button>
+        </div>
+        <div class="panel-body">
+          <pre id="debug" class="debug">Waiting...</pre>
+        </div>
+      </section>
+
+      <section class="panel tab-hidden" data-dashboard-tab="control">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Playback et LQR</h2>
+            <p class="panel-kicker" id="controlSettingsStatus">Synchronisation en attente</p>
+          </div>
+        </div>
+        <div class="panel-body field-grid">
+          <div class="readout-grid">
+            <div class="metric">
+              <div class="metric-label">Reference playback</div>
+              <div class="segmented" style="margin-top: 8px;">
+                <button id="referenceBodyBtn" class="active" type="button">Body</button>
+                <button id="referenceWorldBtn" type="button">World</button>
+              </div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Progression</div>
+              <div class="segmented" style="margin-top: 8px;">
+                <button id="progressionSetpointBtn" class="active" type="button">Setpoint</button>
+                <button id="progressionTimestampBtn" type="button">Timestamp</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">Tolérances playback</div>
+            <div class="matrix-grid" style="margin-top: 8px;">
+              <div class="field"><label for="positionTolerance">Horizontal (m)</label><input id="positionTolerance" type="number" min="0.01" step="0.01" value="0.15"></div>
+              <div class="field"><label for="depthTolerance">Profondeur (m)</label><input id="depthTolerance" type="number" min="0.01" step="0.01" value="0.10"></div>
+              <div class="field"><label for="angleTolerance">Orientation (deg)</label><input id="angleTolerance" type="number" min="1" step="1" value="10"></div>
+              <div class="field"><label for="waypointTimeout">Timeout (s)</label><input id="waypointTimeout" type="number" min="1" step="1" value="8"></div>
+            </div>
+            <button id="applyPlaybackSettingsBtn" class="ghost" type="button" style="margin-top: 8px;">Appliquer les tolérances</button>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">Profil LQR</div>
+            <div class="segmented three" style="margin-top: 8px;">
+              <button id="profileStandstillBtn" class="active" type="button">Standstill</button>
+              <button id="profileForwardBtn" type="button">Forward</button>
+              <button id="profileTurningBtn" type="button">Forward + Turning</button>
+            </div>
+            <div class="matrix-grid" style="margin-top: 8px;">
+              <div class="field">
+                <label for="profileTransitionSec">Transition Q/R (s)</label>
+                <input id="profileTransitionSec" type="number" min="0" step="0.1" value="1.0">
+              </div>
+            </div>
+            <div id="profileStatus" class="tiny" style="margin-top: 8px;">Changement lisse permis en temps reel.</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">Matrice Q - coût des états</div>
+            <div id="qMatrixFields" class="matrix-grid" style="margin-top: 8px;"></div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Matrice R - coût des thrusters</div>
+            <div id="rMatrixFields" class="matrix-grid" style="margin-top: 8px;"></div>
+          </div>
+          <div class="button-row">
+            <button id="reloadMatricesBtn" class="ghost" type="button">Relire Q/R</button>
+            <button id="applyMatricesBtn" class="primary" type="button">Appliquer Q/R</button>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const joyTopic = "/dashboard/gamepad";
+    const debugTopic = "/debug/manual_assisted";
+    const openLoopDebugTopic = "/debug/open_loop_cmd";
+    const playbackStatusTopic = "/playback/status";
+    const rosoutTopic = "/rosout";
+    const telemetryTopics = {
+      odometry: "/odometry/filtered",
+      controlTarget: "/control/target",
+      playbackTarget: "/control/playback_target",
+      thrusters: "/thruster_cmd",
+      killSwitch: "/kill_switch",
+      magneticSwitch2: "/magnetic_switch_2"
+    };
+    const unityCameraTopics = {
+      front: "/unity/camera/front/compressed",
+      bottom: "/unity/camera/bottom/compressed"
+    };
+    const unityCameraTimeoutMs = 2000;
+    const publishPeriodMs = 50;
+    const storageKey = "asuqtr.dashboard.settings";
+
+    let ws = null;
+    let publishTimer = null;
+    let publishCount = 0;
+    let lastPublishCount = 0;
+    let lastJoy = null;
+    let lastJoyAt = 0;
+    let manualAssistedDebug = null;
+    let openLoopDebug = null;
+    let selectedControlMode = "manual_assisted";
+    let recordEnabled = false;
+    let recordRequestPending = false;
+    let playbackRequestPending = false;
+    let playbackStatus = "-";
+    let playbackReferenceMode = "body";
+    let playbackProgressionMode = "setpoint";
+    let playbackType = "assisted_target";
+    let playbackActive = false;
+    let controlStopped = true;
+    let disablePwmReceived = false;
+    let killSwitchArmed = null;
+    let magneticSwitch2Active = null;
+    let latestPlaybackStatus = null;
+    let previousPlaybackState = "";
+    let eventSequence = 0;
+    let lastRosoutSignature = "";
+    let lastRosoutAt = 0;
+    let depthParameterRequestsPending = 0;
+    let depthParameterQueue = [];
+    let physicalCamerasAvailable = false;
+    let physicalCameraBase = "";
+    let lastChartOdomAt = 0;
+    let chartCaptureEnabled = false;
+    const lastUnityFrameAt = { 1: 0, 2: 0 };
+    const cameraSource = { 1: "offline", 2: "offline" };
+    const telemetry = {
+      odometry: { lastAt: 0, count: 0, rate: 0, message: null, staleMs: 750, healthState: "waiting" },
+      controlTarget: { lastAt: 0, count: 0, rate: 0, message: null, staleMs: 1500, healthState: "waiting" },
+      playbackTarget: { lastAt: 0, count: 0, rate: 0, message: null, staleMs: 1500, healthState: "waiting" },
+      thrusters: { lastAt: 0, count: 0, rate: 0, message: null, staleMs: 1500, healthState: "waiting" },
+      playback: { lastAt: 0, count: 0, rate: 0, message: null, staleMs: Infinity, healthState: "waiting" }
+    };
+
+    const el = {
+      jetsonIp: document.getElementById("jetsonIp"),
+      rosbridgeUrl: document.getElementById("rosbridgeUrl"),
+      cameraUrl: document.getElementById("cameraUrl"),
+      hostHint: document.getElementById("hostHint"),
+      eventLog: document.getElementById("eventLog"),
+      eventCount: document.getElementById("eventCount"),
+      clearEventsBtn: document.getElementById("clearEventsBtn"),
+      rosDot: document.getElementById("rosDot"),
+      gamepadDot: document.getElementById("gamepadDot"),
+      pubDot: document.getElementById("pubDot"),
+      rosText: document.getElementById("rosText"),
+      gamepadText: document.getElementById("gamepadText"),
+      pubText: document.getElementById("pubText"),
+      publishRate: document.getElementById("publishRate"),
+      gamepadName: document.getElementById("gamepadName"),
+      debug: document.getElementById("debug"),
+      modeMetric: document.getElementById("modeMetric"),
+      manualAssistedModeBtn: document.getElementById("manualAssistedModeBtn"),
+      openLoopModeBtn: document.getElementById("openLoopModeBtn"),
+      lqrProfileMetric: document.getElementById("lqrProfileMetric"),
+      pilotProfileStandstill: document.getElementById("pilotProfileStandstill"),
+      pilotProfileForward: document.getElementById("pilotProfileForward"),
+      pilotProfileTurning: document.getElementById("pilotProfileTurning"),
+      cameraHint: document.getElementById("cameraHint"),
+      recordBtn: document.getElementById("recordBtn"),
+      playbackPath: document.getElementById("playbackPath"),
+      loadPlaybackBtn: document.getElementById("loadPlaybackBtn"),
+      playPlaybackBtn: document.getElementById("playPlaybackBtn"),
+      stopPlaybackBtn: document.getElementById("stopPlaybackBtn"),
+      playbackMetric: document.getElementById("playbackMetric"),
+      referenceBodyBtn: document.getElementById("referenceBodyBtn"),
+      referenceWorldBtn: document.getElementById("referenceWorldBtn"),
+      progressionSetpointBtn: document.getElementById("progressionSetpointBtn"),
+      progressionTimestampBtn: document.getElementById("progressionTimestampBtn"),
+      positionTolerance: document.getElementById("positionTolerance"),
+      depthTolerance: document.getElementById("depthTolerance"),
+      angleTolerance: document.getElementById("angleTolerance"),
+      waypointTimeout: document.getElementById("waypointTimeout"),
+      applyPlaybackSettingsBtn: document.getElementById("applyPlaybackSettingsBtn"),
+      qMatrixFields: document.getElementById("qMatrixFields"),
+      rMatrixFields: document.getElementById("rMatrixFields"),
+      reloadMatricesBtn: document.getElementById("reloadMatricesBtn"),
+      applyMatricesBtn: document.getElementById("applyMatricesBtn"),
+      profileStandstillBtn: document.getElementById("profileStandstillBtn"),
+      profileForwardBtn: document.getElementById("profileForwardBtn"),
+      profileTurningBtn: document.getElementById("profileTurningBtn"),
+      profileTransitionSec: document.getElementById("profileTransitionSec"),
+      profileStatus: document.getElementById("profileStatus"),
+      controlSettingsStatus: document.getElementById("controlSettingsStatus"),
+      debugPwmDot: document.getElementById("debugPwmDot"),
+      debugPwmState: document.getElementById("debugPwmState"),
+      debugKillDot: document.getElementById("debugKillDot"),
+      debugKillState: document.getElementById("debugKillState"),
+      debugMag2Dot: document.getElementById("debugMag2Dot"),
+      debugMag2State: document.getElementById("debugMag2State"),
+      debugPlaybackState: document.getElementById("debugPlaybackState"),
+      debugPlaybackDetail: document.getElementById("debugPlaybackDetail"),
+      debugPosition: document.getElementById("debugPosition"),
+      debugOrientation: document.getElementById("debugOrientation"),
+      debugLinearVelocity: document.getElementById("debugLinearVelocity"),
+      debugAngularVelocity: document.getElementById("debugAngularVelocity"),
+      debugDepth: document.getElementById("debugDepth"),
+      debugOdomFrame: document.getElementById("debugOdomFrame"),
+      debugTargetSource: document.getElementById("debugTargetSource"),
+      debugTargetPosition: document.getElementById("debugTargetPosition"),
+      debugTargetOrientation: document.getElementById("debugTargetOrientation"),
+      debugHorizontalError: document.getElementById("debugHorizontalError"),
+      debugDepthError: document.getElementById("debugDepthError"),
+      debugYawError: document.getElementById("debugYawError"),
+      debugThrusterGrid: document.getElementById("debugThrusterGrid"),
+      debugThrusterMax: document.getElementById("debugThrusterMax"),
+      yawChart: document.getElementById("yawChart"),
+      depthChart: document.getElementById("depthChart"),
+      angularRateChart: document.getElementById("angularRateChart"),
+      thrusterChart: document.getElementById("thrusterChart"),
+      yawChartReadout: document.getElementById("yawChartReadout"),
+      depthChartReadout: document.getElementById("depthChartReadout"),
+      angularRateChartReadout: document.getElementById("angularRateChartReadout"),
+      thrusterChartReadout: document.getElementById("thrusterChartReadout"),
+      depthLimitsEnabled: document.getElementById("depthLimitsEnabled"),
+      depthBaseTarget: document.getElementById("depthBaseTarget"),
+      depthMinTarget: document.getElementById("depthMinTarget"),
+      depthMaxTarget: document.getElementById("depthMaxTarget"),
+      applyDepthLimitsBtn: document.getElementById("applyDepthLimitsBtn"),
+      depthLimitsStatus: document.getElementById("depthLimitsStatus"),
+      cam1Card: document.getElementById("cam1Card"),
+      cam2Card: document.getElementById("cam2Card"),
+      cam1: document.getElementById("cam1"),
+      cam2: document.getElementById("cam2"),
+      cam1State: document.getElementById("cam1State"),
+      cam2State: document.getElementById("cam2State"),
+      leftStickDot: document.getElementById("leftStickDot"),
+      rightStickDot: document.getElementById("rightStickDot"),
+      ltFill: document.getElementById("ltFill"),
+      rtFill: document.getElementById("rtFill")
+    };
+
+    const qLabels = ["X", "Y", "Z", "Roll", "Pitch", "Yaw", "Vx", "Vy", "Vz", "P", "Q", "R"];
+    const rLabels = ["Thruster 1", "Thruster 2", "Thruster 3", "Thruster 4", "Thruster 5", "Thruster 6", "Thruster 7", "Thruster 8"];
+    const qInputs = [];
+    const rInputs = [];
+    const thrusterDebugValues = [];
+    const chartWindowMs = 180000;
+    const chartSamples = {
+      yaw: [],
+      depth: [],
+      angularRate: [],
+      thruster: []
+    };
+
+    function buildMatrixFields(container, labels, inputs) {
+      labels.forEach((label, index) => {
+        const field = document.createElement("div");
+        field.className = "field";
+        const fieldLabel = document.createElement("label");
+        fieldLabel.textContent = label;
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = "0";
+        input.step = "0.0001";
+        input.dataset.matrixIndex = String(index);
+        field.append(fieldLabel, input);
+        container.appendChild(field);
+        inputs.push(input);
+      });
+    }
+
+    buildMatrixFields(el.qMatrixFields, qLabels, qInputs);
+    buildMatrixFields(el.rMatrixFields, rLabels, rInputs);
+
+    rLabels.forEach((label) => {
+      const metric = document.createElement("div");
+      metric.className = "metric";
+      const metricLabel = document.createElement("div");
+      metricLabel.className = "metric-label";
+      metricLabel.textContent = label;
+      const value = document.createElement("div");
+      value.className = "thruster-value";
+      value.textContent = "-";
+      metric.append(metricLabel, value);
+      el.debugThrusterGrid.appendChild(metric);
+      thrusterDebugValues.push(value);
+    });
+
+    const axisEls = {
+      leftX: { value: document.getElementById("leftXValue"), bar: document.getElementById("leftXBar") },
+      leftY: { value: document.getElementById("leftYValue"), bar: document.getElementById("leftYBar") },
+      vertical: { value: document.getElementById("verticalValue"), bar: document.getElementById("verticalBar") },
+      rightX: { value: document.getElementById("rightXValue"), bar: document.getElementById("rightXBar") },
+      rightY: { value: document.getElementById("rightYValue"), bar: document.getElementById("rightYBar") }
+    };
+
+    const buttonEls = {
+      0: document.getElementById("btnA"),
+      1: document.getElementById("btnB"),
+      2: document.getElementById("btnX"),
+      3: document.getElementById("btnY"),
+      6: document.getElementById("btnSelect"),
+      7: document.getElementById("btnStart")
+    };
+
+    const faceButtonEls = {
+      0: document.getElementById("faceA"),
+      1: document.getElementById("faceB"),
+      2: document.getElementById("faceX"),
+      3: document.getElementById("faceY"),
+      6: document.getElementById("smallSelect"),
+      7: document.getElementById("smallStart")
+    };
+
+    function setDot(dot, status) {
+      dot.className = "dot " + status;
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function nowStamp() {
+      const ms = Date.now();
+      return {
+        sec: Math.floor(ms / 1000),
+        nanosec: (ms % 1000) * 1000000
+      };
+    }
+
+    function loadSettings() {
+      try {
+        const settings = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        if (settings.jetsonIp) el.jetsonIp.value = settings.jetsonIp;
+        if (settings.rosbridgeUrl) el.rosbridgeUrl.value = settings.rosbridgeUrl;
+        if (settings.cameraUrl) el.cameraUrl.value = settings.cameraUrl;
+        if (settings.playbackPath) el.playbackPath.value = settings.playbackPath;
+        if (settings.playbackReferenceMode) playbackReferenceMode = settings.playbackReferenceMode;
+        if (settings.playbackProgressionMode) playbackProgressionMode = settings.playbackProgressionMode;
+      } catch (error) {
+        console.warn("Could not load dashboard settings", error);
+      }
+    }
+
+    function saveSettings() {
+      const settings = {
+        jetsonIp: el.jetsonIp.value.trim(),
+        rosbridgeUrl: el.rosbridgeUrl.value.trim(),
+        cameraUrl: el.cameraUrl.value.trim(),
+        playbackPath: el.playbackPath.value.trim(),
+        playbackReferenceMode,
+        playbackProgressionMode
+      };
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(settings));
+      } catch (error) {
+        console.warn("Could not save dashboard settings", error);
+      }
+    }
+
+    function applyHost(host) {
+      const cleanHost = host.trim();
+      el.jetsonIp.value = cleanHost;
+      el.rosbridgeUrl.value = "ws://" + cleanHost + ":9090";
+      el.cameraUrl.value = "http://" + cleanHost + ":6969";
+      saveSettings();
+    }
+
+    function normalizedUrls() {
+      const ip = el.jetsonIp.value.trim() || "127.0.0.1";
+      const rosUrl = el.rosbridgeUrl.value.trim() || "ws://" + ip + ":9090";
+      const camBase = el.cameraUrl.value.trim() || "http://" + ip + ":6969";
+      el.rosbridgeUrl.value = rosUrl;
+      el.cameraUrl.value = camBase;
+      return { ip, rosUrl, camBase };
+    }
+
+    function send(obj) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+      ws.send(JSON.stringify(obj));
+      return true;
+    }
+
+    function addEvent(level, source, message) {
+      if (!el.eventLog || !message) return;
+      const item = document.createElement("li");
+      item.className = "event-item " + level;
+      item.dataset.sequence = String(++eventSequence);
+
+      const time = document.createElement("span");
+      time.className = "event-time";
+      time.textContent = new Date().toLocaleTimeString("fr-CA", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+      });
+
+      const content = document.createElement("span");
+      const sourceLabel = document.createElement("span");
+      sourceLabel.className = "event-source";
+      sourceLabel.textContent = source + " ";
+      content.append(sourceLabel, document.createTextNode(message));
+      item.append(time, content);
+      el.eventLog.appendChild(item);
+
+      while (el.eventLog.children.length > 120) {
+        el.eventLog.firstElementChild.remove();
+      }
+      el.eventCount.textContent = el.eventLog.children.length + " événement(s)";
+      el.eventLog.scrollTop = el.eventLog.scrollHeight;
+    }
+
+    function rosoutLevel(level) {
+      if (level >= 50) return "error";
+      if (level >= 30) return "warn";
+      return "info";
+    }
+
+    function handleRosout(msg) {
+      if (!msg || !msg.msg) return;
+      const source = String(msg.name || "rosout").replace(/^\//, "");
+      const monitored = [
+        "control_node",
+        "playback_node",
+        "gpio_node",
+        "actuator_node",
+        "rosbridge"
+      ].some((name) => source.includes(name));
+      if (!monitored && Number(msg.level || 0) < 30) return;
+
+      const signature = source + "|" + msg.level + "|" + msg.msg;
+      const now = Date.now();
+      if (signature === lastRosoutSignature && now - lastRosoutAt < 1000) return;
+      lastRosoutSignature = signature;
+      lastRosoutAt = now;
+      addEvent(rosoutLevel(Number(msg.level || 0)), source, String(msg.msg));
+    }
+
+    function subscribe(topic, type, options = {}) {
+      const subscribed = send({
+        op: "subscribe",
+        topic,
+        type,
+        queue_length: options.queueLength || 1,
+        ...(options.throttleRate ? { throttle_rate: options.throttleRate } : {})
+      });
+      if (subscribed && topic !== rosoutTopic) {
+        addEvent("info", "dashboard", "Subscription demandée: " + topic);
+      }
+    }
+
+    function advertiseJoy() {
+      const advertised = send({
+        op: "advertise",
+        topic: joyTopic,
+        type: "sensor_msgs/msg/Joy"
+      });
+      if (advertised) addEvent("ok", "dashboard", "Publisher prêt: " + joyTopic);
+      subscribe(debugTopic, "std_msgs/msg/Float64MultiArray", { throttleRate: 120 });
+      subscribe(openLoopDebugTopic, "std_msgs/msg/Float64MultiArray", { throttleRate: 120 });
+      subscribe(
+        unityCameraTopics.front,
+        "sensor_msgs/msg/CompressedImage",
+        { throttleRate: 100 }
+      );
+      subscribe(
+        playbackStatusTopic,
+        "sub_interfaces/msg/PlaybackStatus",
+        { throttleRate: 100 }
+      );
+      subscribe("/disable_pwm", "std_msgs/msg/Bool");
+      subscribe(rosoutTopic, "rcl_interfaces/msg/Log");
+      subscribe(telemetryTopics.odometry, "nav_msgs/msg/Odometry");
+      subscribe(telemetryTopics.controlTarget, "sub_interfaces/msg/ControlTarget");
+      subscribe(telemetryTopics.playbackTarget, "sub_interfaces/msg/ControlTarget");
+      subscribe(telemetryTopics.thrusters, "sub_interfaces/msg/ThrusterCommand");
+      subscribe(telemetryTopics.killSwitch, "std_msgs/msg/Bool");
+      subscribe(telemetryTopics.magneticSwitch2, "std_msgs/msg/Bool");
+      requestDepthParameters();
+      requestPlaybackParameters();
+      requestControlParameters();
+      subscribe(
+        unityCameraTopics.bottom,
+        "sensor_msgs/msg/CompressedImage",
+        { throttleRate: 100 }
+      );
+    }
+
+    function connect() {
+      const { rosUrl, camBase } = normalizedUrls();
+      saveSettings();
+      reloadCameras(camBase);
+
+      if (ws) {
+        ws.onopen = null;
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.onmessage = null;
+        ws.close();
+      }
+
+      el.hostHint.textContent = rosUrl;
+      el.rosText.textContent = "Connexion...";
+      setDot(el.rosDot, "warn");
+
+      ws = new WebSocket(rosUrl);
+      ws.onopen = () => {
+        setDot(el.rosDot, "ok");
+        el.rosText.textContent = "Connecte";
+        addEvent("ok", "rosbridge", "Connexion établie: " + rosUrl);
+        advertiseJoy();
+      };
+      ws.onclose = () => {
+        setDot(el.rosDot, "bad");
+        setDot(el.pubDot, "warn");
+        el.rosText.textContent = "Hors ligne";
+        el.pubText.textContent = "En attente";
+        addEvent("error", "rosbridge", "Connexion fermée");
+      };
+      ws.onerror = () => {
+        setDot(el.rosDot, "bad");
+        el.rosText.textContent = "Erreur";
+        addEvent("error", "rosbridge", "Erreur WebSocket");
+      };
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.topic === debugTopic) {
+            manualAssistedDebug = data.msg;
+          } else if (data.topic === openLoopDebugTopic) {
+            openLoopDebug = data.msg;
+          } else if (data.topic === unityCameraTopics.front) {
+            displayUnityCameraFrame(1, data.msg);
+          } else if (data.topic === unityCameraTopics.bottom) {
+            displayUnityCameraFrame(2, data.msg);
+          } else if (data.topic === playbackStatusTopic) {
+            markTelemetry("playback", data.msg);
+            handlePlaybackStatus(data.msg);
+          } else if (data.topic === "/disable_pwm") {
+            const previousStopped = controlStopped;
+            const hadState = disablePwmReceived;
+            disablePwmReceived = true;
+            controlStopped = Boolean(data.msg && data.msg.data);
+            chartCaptureEnabled = !controlStopped;
+            if (controlStopped && recordEnabled) {
+              recordEnabled = false;
+              recordRequestPending = false;
+              updateRecordButton();
+            }
+            if (!hadState || previousStopped !== controlStopped) {
+              addEvent(
+                controlStopped ? "error" : "ok",
+                "PWM",
+                controlStopped ? "PWM désactivés" : "PWM activés"
+              );
+            }
+            updateControlLocks();
+          } else if (data.topic === telemetryTopics.killSwitch) {
+            const previousKillState = killSwitchArmed;
+            killSwitchArmed = Boolean(data.msg && data.msg.data);
+            if (previousKillState !== killSwitchArmed) {
+              addEvent(
+                killSwitchArmed ? "ok" : "error",
+                "Mag 1",
+                killSwitchArmed ? "Killswitch armée" : "Killswitch retirée"
+              );
+            }
+          } else if (data.topic === telemetryTopics.magneticSwitch2) {
+            const previousMag2State = magneticSwitch2Active;
+            magneticSwitch2Active = Boolean(data.msg && data.msg.data);
+            if (previousMag2State !== magneticSwitch2Active) {
+              addEvent(
+                magneticSwitch2Active ? "ok" : "info",
+                "Mag 2",
+                magneticSwitch2Active ? "Déclencheur activé" : "Déclencheur relâché"
+              );
+            }
+          } else if (data.topic === telemetryTopics.odometry) {
+            markTelemetry("odometry", data.msg);
+          } else if (data.topic === telemetryTopics.controlTarget) {
+            markTelemetry("controlTarget", data.msg);
+          } else if (data.topic === telemetryTopics.playbackTarget) {
+            markTelemetry("playbackTarget", data.msg);
+          } else if (data.topic === telemetryTopics.thrusters) {
+            markTelemetry("thrusters", data.msg);
+          } else if (data.op === "service_response" && data.service === "/control_node/get_parameters") {
+            if (String(data.id || "").startsWith("depth-")) handleDepthParameters(data);
+            if (String(data.id || "").startsWith("control-settings-")) handleControlParameters(data);
+          } else if (data.op === "service_response" && data.service === "/playback_node/get_parameters") {
+            handlePlaybackParameters(data);
+          } else if (data.op === "service_response" && data.service === "/control_node/set_parameters") {
+            if (String(data.id || "").startsWith("depth-")) handleDepthParameterResult(data);
+            if (String(data.id || "").startsWith("profile-")) handleProfileResult(data);
+            if (String(data.id || "").startsWith("control-mode-")) handleControlModeResult(data);
+          } else if (data.op === "service_response" && data.service === "/control_node/set_parameters_atomically") {
+            handleMatrixResult(data);
+          } else if (data.op === "service_response" && data.service === "/playback_node/set_parameters") {
+            handlePlaybackSettingsResult(data);
+          } else if (data.op === "service_response" && data.service === "/playback_recording") {
+            recordRequestPending = false;
+            if (data.result === false || !data.values || !data.values.success) {
+              recordEnabled = !recordEnabled;
+              console.warn("Playback recording service rejected the request", data);
+              addEvent("error", "record", "Commande Record refusée");
+            } else {
+              addEvent(
+                recordEnabled ? "ok" : "info",
+                "record",
+                recordEnabled ? "Enregistrement démarré" : "Enregistrement sauvegardé"
+              );
+            }
+            updateRecordButton();
+          } else if (data.op === "service_response" && data.service === "/playback_command") {
+            playbackRequestPending = false;
+            if (data.result === false || !data.values || !data.values.success) {
+              playbackStatus = "Erreur";
+              console.warn("Playback command failed", data);
+            } else {
+              const count = data.values.waypoint_count || 0;
+              playbackStatus = count + " pts";
+            }
+            if (data.values && data.values.message) {
+              console.info(data.values.message);
+              addEvent(
+                data.values.success ? "ok" : "error",
+                "playback",
+                String(data.values.message)
+              );
+            }
+            updatePlaybackButtons();
+          } else if (data.op === "status") {
+            addEvent(
+              data.level === "error" ? "error" : "info",
+              "rosbridge",
+              String(data.msg || data.id || "Statut reçu")
+            );
+          } else if (data.topic === rosoutTopic) {
+            handleRosout(data.msg);
+          }
+        } catch (error) {
+          console.warn("Invalid rosbridge message", error);
+        }
+      };
+    }
+
+    async function reloadCameras(baseUrl) {
+      const camBase = baseUrl || normalizedUrls().camBase;
+      const stamp = Date.now();
+      physicalCameraBase = camBase;
+      physicalCamerasAvailable = false;
+      setCameraState(1, "loading");
+      setCameraState(2, "loading");
+      el.cam1State.textContent = "loading";
+      el.cam2State.textContent = "loading";
+      el.cameraHint.textContent = camBase;
+
+      try {
+        const response = await fetch(camBase + "/health?t=" + stamp, { cache: "no-store" });
+        const health = await response.json();
+        if (health.physical_cameras === false) {
+          if (!hasRecentUnityFrame(1)) el.cam1.removeAttribute("src");
+          if (!hasRecentUnityFrame(2)) el.cam2.removeAttribute("src");
+          if (!hasRecentUnityFrame(1)) setCameraState(1, "Unity attendu");
+          if (!hasRecentUnityFrame(2)) setCameraState(2, "Unity attendu");
+          el.cameraHint.textContent = "Cameras physiques desactivees en simulation";
+          return;
+        }
+        physicalCamerasAvailable = true;
+      } catch (error) {
+        console.warn("Camera health check failed; trying MJPEG streams", error);
+        physicalCamerasAvailable = true;
+      }
+
+      loadPhysicalCamera(1, stamp);
+      loadPhysicalCamera(2, stamp);
+    }
+
+    function compressedImageDataUri(msg) {
+      if (!msg || !msg.data) return null;
+      let base64 = msg.data;
+      if (Array.isArray(base64)) {
+        let binary = "";
+        const chunkSize = 8192;
+        for (let offset = 0; offset < base64.length; offset += chunkSize) {
+          binary += String.fromCharCode(...base64.slice(offset, offset + chunkSize));
+        }
+        base64 = btoa(binary);
+      }
+      if (typeof base64 !== "string" || base64.length === 0) return null;
+      const format = String(msg.format || "jpeg").toLowerCase();
+      const mime = format.includes("png") ? "image/png" : "image/jpeg";
+      return "data:" + mime + ";base64," + base64;
+    }
+
+    function displayUnityCameraFrame(cameraIndex, msg) {
+      const uri = compressedImageDataUri(msg);
+      if (!uri) return;
+      const image = cameraIndex === 1 ? el.cam1 : el.cam2;
+      lastUnityFrameAt[cameraIndex] = Date.now();
+      cameraSource[cameraIndex] = "unity";
+      image.src = uri;
+      setCameraState(cameraIndex, "UNITY");
+      el.cameraHint.textContent = "Flux Unity via ROSBridge";
+    }
+
+    function hasRecentUnityFrame(cameraIndex) {
+      return Date.now() - lastUnityFrameAt[cameraIndex] <= unityCameraTimeoutMs;
+    }
+
+    function loadPhysicalCamera(cameraIndex, stamp) {
+      if (!physicalCamerasAvailable || hasRecentUnityFrame(cameraIndex)) return;
+      const image = cameraIndex === 1 ? el.cam1 : el.cam2;
+      cameraSource[cameraIndex] = "physical";
+      image.src = physicalCameraBase + "/video_feed" + cameraIndex + "?t=" + (stamp || Date.now());
+      setCameraState(cameraIndex, "PHYSIQUE");
+    }
+
+    function updateCameraSources() {
+      for (const cameraIndex of [1, 2]) {
+        if (hasRecentUnityFrame(cameraIndex)) continue;
+        if (cameraSource[cameraIndex] === "unity") {
+          cameraSource[cameraIndex] = "offline";
+          if (physicalCamerasAvailable) {
+            loadPhysicalCamera(cameraIndex);
+          } else {
+            const image = cameraIndex === 1 ? el.cam1 : el.cam2;
+            image.removeAttribute("src");
+            setCameraState(cameraIndex, "Unity attendu");
+          }
+        }
+      }
+    }
+
+    function setCameraState(cameraIndex, state) {
+      const card = cameraIndex === 1 ? el.cam1Card : el.cam2Card;
+      const label = cameraIndex === 1 ? el.cam1State : el.cam2State;
+      label.textContent = state;
+      card.classList.toggle(
+        "offline",
+        state !== "UNITY" && state !== "PHYSIQUE" && state !== "loading"
+      );
+    }
+
+    function requestDepthParameters() {
+      send({
+        op: "call_service",
+        id: "depth-parameters-get-" + Date.now(),
+        service: "/control_node/get_parameters",
+        type: "rcl_interfaces/srv/GetParameters",
+        args: {
+          names: [
+            "manual_assisted.depth_limits_enabled",
+            "manual_assisted.default_depth_target",
+            "manual_assisted.min_depth_target",
+            "manual_assisted.max_depth_target"
+          ]
+        }
+      });
+    }
+
+    function requestPlaybackParameters() {
+      send({
+        op: "call_service",
+        id: "playback-settings-get-" + Date.now(),
+        service: "/playback_node/get_parameters",
+        type: "rcl_interfaces/srv/GetParameters",
+        args: {
+          names: [
+            "position_tolerance",
+            "depth_tolerance",
+            "angle_tolerance_deg",
+            "waypoint_timeout_sec"
+          ]
+        }
+      });
+    }
+
+    function handlePlaybackParameters(response) {
+      const values = response.values && response.values.values;
+      if (!values || values.length < 4) return;
+      el.positionTolerance.value = Number(values[0].double_value).toFixed(2);
+      el.depthTolerance.value = Number(values[1].double_value).toFixed(2);
+      el.angleTolerance.value = Number(values[2].double_value).toFixed(1);
+      el.waypointTimeout.value = Number(values[3].double_value).toFixed(1);
+    }
+
+    function applyPlaybackSettings() {
+      const values = [
+        Number(el.positionTolerance.value),
+        Number(el.depthTolerance.value),
+        Number(el.angleTolerance.value),
+        Number(el.waypointTimeout.value)
+      ];
+      if (!values.every(Number.isFinite) || values.some((value) => value <= 0)) {
+        el.controlSettingsStatus.textContent = "Tolérances invalides";
+        return;
+      }
+      send({
+        op: "call_service",
+        id: "playback-settings-set-" + Date.now(),
+        service: "/playback_node/set_parameters",
+        type: "rcl_interfaces/srv/SetParameters",
+        args: {
+          parameters: [
+            doubleParameter("position_tolerance", values[0]),
+            doubleParameter("depth_tolerance", values[1]),
+            doubleParameter("angle_tolerance_deg", values[2]),
+            doubleParameter("waypoint_timeout_sec", values[3])
+          ]
+        }
+      });
+      el.controlSettingsStatus.textContent = "Application des tolérances...";
+    }
+
+    function handlePlaybackSettingsResult(response) {
+      const results = response.values && response.values.results;
+      const failed = !results || results.some((result) => !result.successful);
+      el.controlSettingsStatus.textContent = failed ? "Erreur paramètres playback" : "Tolérances appliquées";
+    }
+
+    function requestControlParameters() {
+      send({
+        op: "call_service",
+        id: "control-settings-get-" + Date.now(),
+        service: "/control_node/get_parameters",
+        type: "rcl_interfaces/srv/GetParameters",
+        args: {
+          names: [
+            "state_cost_matrix",
+            "thruster_cost_matrix",
+            "lqr_profile",
+            "lqr_profile_transition_sec",
+            "lqr_profiles.forward_tuned",
+            "lqr_profiles.turning_tuned",
+            "control_mode"
+          ]
+        }
+      });
+    }
+
+    function handleControlParameters(response) {
+      const values = response.values && response.values.values;
+      if (!values || values.length < 6) return;
+      const qValues = values[0].double_array_value || [];
+      const rValues = values[1].double_array_value || [];
+      qInputs.forEach((input, index) => { input.value = Number(qValues[index] || 0).toFixed(4); });
+      rInputs.forEach((input, index) => { input.value = Number(rValues[index] || 0).toFixed(4); });
+      const profile = values[2].string_value || "standstill";
+      el.profileTransitionSec.value = Number(values[3].double_value || 0).toFixed(1);
+      updateProfileButtons(profile);
+      if (values[6] && values[6].string_value) {
+        const actualMode = values[6].string_value;
+        if (actualMode === "open_loop" || actualMode === "manual_assisted") {
+          selectedControlMode = actualMode;
+          updateControlModeButtons();
+          el.modeMetric.textContent = selectedControlMode === "open_loop" ? "Boucle ouverte" : "Carotte LQR";
+        } else {
+          el.modeMetric.textContent = actualMode || "-";
+        }
+      }
+      el.controlSettingsStatus.textContent = "Paramètres synchronisés";
+    }
+
+    function applyMatrices() {
+      const qValues = qInputs.map((input) => Number(input.value));
+      const rValues = rInputs.map((input) => Number(input.value));
+      if (
+        !qValues.every((value) => Number.isFinite(value) && value >= 0)
+        || !rValues.every((value) => Number.isFinite(value) && value > 0)
+      ) {
+        el.controlSettingsStatus.textContent = "Q doit être >= 0 et R > 0";
+        return;
+      }
+      send({
+        op: "call_service",
+        id: "matrix-set-" + Date.now(),
+        service: "/control_node/set_parameters_atomically",
+        type: "rcl_interfaces/srv/SetParametersAtomically",
+        args: {
+          parameters: [
+            doubleArrayParameter("state_cost_matrix", qValues),
+            doubleArrayParameter("thruster_cost_matrix", rValues)
+          ]
+        }
+      });
+      el.controlSettingsStatus.textContent = "Application atomique Q/R...";
+    }
+
+    function handleMatrixResult(response) {
+      const result = response.values && response.values.result;
+      const failed = !result || !result.successful;
+      el.controlSettingsStatus.textContent = failed ? "Q/R refusées" : "Q/R appliquées";
+      if (!failed) requestControlParameters();
+    }
+
+    function selectProfile(profile) {
+      const transitionSec = Math.max(0, Number(el.profileTransitionSec.value || 0));
+      send({
+        op: "call_service",
+        id: "profile-set-" + Date.now(),
+        service: "/control_node/set_parameters",
+        type: "rcl_interfaces/srv/SetParameters",
+        args: {
+          parameters: [
+            doubleParameter("lqr_profile_transition_sec", transitionSec),
+            stringParameter("lqr_profile", profile)
+          ]
+        }
+      });
+      el.profileStatus.textContent = "Transition vers " + profile + "...";
+    }
+
+    function handleProfileResult(response) {
+      const results = response.values && response.values.results;
+      const failure = results && results.find((result) => !result.successful);
+      el.profileStatus.textContent = failure ? failure.reason : "Profil appliqué";
+      if (!failure) requestControlParameters();
+    }
+
+    function updateProfileButtons(profile) {
+      el.profileStandstillBtn.classList.toggle("active", profile === "standstill");
+      el.profileForwardBtn.classList.toggle("active", profile === "forward");
+      el.profileTurningBtn.classList.toggle("active", profile === "turning");
+      el.lqrProfileMetric.textContent = lqrProfileLabel(profile);
+      el.pilotProfileStandstill.classList.toggle("active", profile === "standstill");
+      el.pilotProfileForward.classList.toggle("active", profile === "forward");
+      el.pilotProfileTurning.classList.toggle("active", profile === "turning");
+    }
+
+    function lqrProfileLabel(profile) {
+      if (profile === "forward") return "Forward";
+      if (profile === "turning") return "Forward + Turning";
+      return "Standstill";
+    }
+
+    function doubleParameter(name, value) {
+      return { name, value: { type: 3, double_value: Number(value) } };
+    }
+
+    function doubleArrayParameter(name, values) {
+      return { name, value: { type: 8, double_array_value: values.map(Number) } };
+    }
+
+    function stringParameter(name, value) {
+      return { name, value: { type: 4, string_value: String(value) } };
+    }
+
+    function handleDepthParameters(response) {
+      const values = response.values && response.values.values;
+      if (!values || values.length < 4) return;
+      el.depthLimitsEnabled.checked = Boolean(values[0].bool_value);
+      el.depthBaseTarget.value = Number(values[1].double_value).toFixed(2);
+      el.depthMinTarget.value = Number(values[2].double_value).toFixed(2);
+      el.depthMaxTarget.value = Number(values[3].double_value).toFixed(2);
+      el.depthLimitsStatus.textContent = el.depthLimitsEnabled.checked
+        ? "Actif : " + el.depthMinTarget.value + " a " + el.depthMaxTarget.value + " m"
+        : "Desactive";
+    }
+
+    function setControlParameter(name, type, value) {
+      const parameterValue = { type };
+      if (type === 1) parameterValue.bool_value = Boolean(value);
+      if (type === 3) parameterValue.double_value = Number(value);
+      if (type === 4) parameterValue.string_value = String(value);
+      return send({
+        op: "call_service",
+        id: "depth-parameter-set-" + name + "-" + Date.now(),
+        service: "/control_node/set_parameters",
+        type: "rcl_interfaces/srv/SetParameters",
+        args: {
+          parameters: [{ name, value: parameterValue }]
+        }
+      });
+    }
+
+    function setControlMode(mode, armAfter = false) {
+      selectedControlMode = mode;
+      updateControlModeButtons();
+      const sent = send({
+        op: "call_service",
+        id: "control-mode-set-" + Date.now() + (armAfter ? "-arm" : ""),
+        service: "/control_node/set_parameters",
+        type: "rcl_interfaces/srv/SetParameters",
+        args: {
+          parameters: [stringParameter("control_mode", mode)]
+        }
+      });
+      el.modeMetric.textContent = mode === "open_loop" ? "Boucle ouverte" : "Carotte LQR";
+      if (sent && armAfter) {
+        setTimeout(() => sendSynthetic(7), 180);
+      }
+    }
+
+    function armSelectedMode() {
+      setControlMode(selectedControlMode, true);
+    }
+
+    function updateControlModeButtons() {
+      el.manualAssistedModeBtn.classList.toggle("active", selectedControlMode === "manual_assisted");
+      el.openLoopModeBtn.classList.toggle("active", selectedControlMode === "open_loop");
+    }
+
+    function handleControlModeResult(response) {
+      const results = response.values && response.values.results;
+      const failure = results && results.find((result) => !result.successful);
+      if (failure) {
+        addEvent("error", "mode", failure.reason || "Mode refuse");
+        return;
+      }
+      addEvent(
+        "info",
+        "mode",
+        selectedControlMode === "open_loop" ? "Boucle ouverte selectionnee" : "Carotte LQR selectionnee"
+      );
+    }
+
+    function applyDepthLimits() {
+      const base = Number(el.depthBaseTarget.value);
+      const minDepth = Number(el.depthMinTarget.value);
+      const maxDepth = Number(el.depthMaxTarget.value);
+      if (
+        ![base, minDepth, maxDepth].every(Number.isFinite)
+        || minDepth > maxDepth
+        || (el.depthLimitsEnabled.checked && (base < minDepth || base > maxDepth))
+      ) {
+        el.depthLimitsStatus.textContent = "Valeurs invalides";
+        return;
+      }
+
+      const requests = [
+        ["manual_assisted.depth_limits_enabled", 1, false],
+        ["manual_assisted.max_depth_target", 3, maxDepth],
+        ["manual_assisted.min_depth_target", 3, minDepth],
+        ["manual_assisted.default_depth_target", 3, base],
+        ["manual_assisted.depth_limits_enabled", 1, el.depthLimitsEnabled.checked]
+      ];
+      depthParameterQueue = requests;
+      depthParameterRequestsPending = requests.length;
+      el.applyDepthLimitsBtn.disabled = true;
+      el.depthLimitsStatus.textContent = "Application...";
+      sendNextDepthParameter();
+    }
+
+    function sendNextDepthParameter() {
+      if (depthParameterQueue.length === 0) {
+        depthParameterRequestsPending = 0;
+        el.applyDepthLimitsBtn.disabled = false;
+        requestDepthParameters();
+        return;
+      }
+      const [name, type, value] = depthParameterQueue.shift();
+      if (!setControlParameter(name, type, value)) {
+        depthParameterQueue = [];
+        depthParameterRequestsPending = 0;
+        el.applyDepthLimitsBtn.disabled = false;
+        el.depthLimitsStatus.textContent = "ROSBridge hors ligne";
+      }
+    }
+
+    function handleDepthParameterResult(response) {
+      const results = response.values && response.values.results;
+      const failed = !results || results.some((result) => !result.successful);
+      if (failed) {
+        const reason = results && results.find((result) => !result.successful);
+        el.depthLimitsStatus.textContent = "Erreur: " + ((reason && reason.reason) || "parametre refuse");
+        depthParameterQueue = [];
+        depthParameterRequestsPending = 0;
+        el.applyDepthLimitsBtn.disabled = false;
+        return;
+      }
+      depthParameterRequestsPending = Math.max(0, depthParameterRequestsPending - 1);
+      sendNextDepthParameter();
+    }
+
+    function buttonValue(gp, index) {
+      const button = gp.buttons[index];
+      return button && button.pressed ? 1 : 0;
+    }
+
+    function triggerAxis(gp, index) {
+      const button = gp.buttons[index];
+      const value = button ? button.value : 0;
+      return 1 - 2 * value;
+    }
+
+    function readGamepad() {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      const gp = Array.from(pads).find(Boolean);
+      if (!gp) {
+        setDot(el.gamepadDot, "bad");
+        el.gamepadText.textContent = "Absent";
+        el.gamepadName.textContent = "Aucune manette";
+        resetInputs();
+        return null;
+      }
+
+      setDot(el.gamepadDot, "ok");
+      el.gamepadText.textContent = "Actif";
+      el.gamepadName.textContent = gp.id || "Gamepad";
+
+      const leftX = gp.axes[0] || 0;
+      const leftY = -(gp.axes[1] || 0);
+      const rightX = gp.axes[2] || 0;
+      const rightY = -(gp.axes[3] || 0);
+      const ltAxis = triggerAxis(gp, 6);
+      const rtAxis = triggerAxis(gp, 7);
+      const vertical = (ltAxis - rtAxis) / 2;
+      const ltValue = gp.buttons[6] ? gp.buttons[6].value : 0;
+      const rtValue = gp.buttons[7] ? gp.buttons[7].value : 0;
+
+      const axes = [leftX, leftY, ltAxis, rightX, rightY, rtAxis];
+      const buttons = new Array(12).fill(0);
+      buttons[0] = buttonValue(gp, 0);
+      buttons[1] = buttonValue(gp, 1);
+      buttons[2] = buttonValue(gp, 2);
+      buttons[3] = buttonValue(gp, 3);
+      buttons[4] = buttonValue(gp, 4);
+      buttons[5] = buttonValue(gp, 5);
+      buttons[6] = buttonValue(gp, 8);
+      buttons[7] = buttonValue(gp, 9);
+
+      updateInputs({ leftX, leftY, rightX, rightY, vertical, ltValue, rtValue, buttons });
+
+      return {
+        header: {
+          stamp: nowStamp(),
+          frame_id: ""
+        },
+        axes,
+        buttons
+      };
+    }
+
+    function updateInputs(state) {
+      setAxis("leftX", state.leftX);
+      setAxis("leftY", state.leftY);
+      setAxis("rightX", state.rightX);
+      setAxis("rightY", state.rightY);
+      setAxis("vertical", state.vertical);
+
+      let activeCount = 0;
+      Object.keys(buttonEls).forEach((index) => {
+        const active = Boolean(state.buttons[Number(index)]);
+        buttonEls[index].classList.toggle("active", active);
+        faceButtonEls[index].classList.toggle("active", active);
+        if (active) activeCount += 1;
+      });
+      document.getElementById("buttonValue").textContent = String(activeCount);
+
+      setStick(el.leftStickDot, state.leftX, -state.leftY);
+      setStick(el.rightStickDot, state.rightX, -state.rightY);
+      el.ltFill.style.width = (clamp(state.ltValue, 0, 1) * 100).toFixed(1) + "%";
+      el.rtFill.style.width = (clamp(state.rtValue, 0, 1) * 100).toFixed(1) + "%";
+    }
+
+    function resetInputs() {
+      updateInputs({
+        leftX: 0,
+        leftY: 0,
+        rightX: 0,
+        rightY: 0,
+        vertical: 0,
+        ltValue: 0,
+        rtValue: 0,
+        buttons: new Array(12).fill(0)
+      });
+    }
+
+    function setStick(dot, x, y) {
+      const maxTravel = 26;
+      const tx = clamp(x, -1, 1) * maxTravel;
+      const ty = clamp(y, -1, 1) * maxTravel;
+      dot.style.transform = "translate(" + tx.toFixed(1) + "px, " + ty.toFixed(1) + "px)";
+    }
+
+    function setAxis(name, value) {
+      const axis = axisEls[name];
+      const normalized = clamp(value, -1, 1);
+      axis.value.textContent = normalized.toFixed(2);
+      if (normalized >= 0) {
+        axis.bar.style.left = "50%";
+        axis.bar.style.width = (normalized * 50).toFixed(2) + "%";
+      } else {
+        axis.bar.style.left = (50 + normalized * 50).toFixed(2) + "%";
+        axis.bar.style.width = (-normalized * 50).toFixed(2) + "%";
+      }
+    }
+
+    function publishJoy(msg) {
+      const published = send({
+        op: "publish",
+        topic: joyTopic,
+        msg
+      });
+      lastJoy = msg;
+      lastJoyAt = Date.now();
+      if (published) {
+        publishCount += 1;
+        setDot(el.pubDot, "ok");
+        el.pubText.textContent = "Publication";
+      } else {
+        setDot(el.pubDot, "warn");
+        el.pubText.textContent = "En attente";
+      }
+    }
+
+    function sendSynthetic(buttonIndex) {
+      const msg = readGamepad() || {
+        header: { stamp: nowStamp(), frame_id: "" },
+        axes: [0, 0, 1, 0, 0, 1],
+        buttons: new Array(12).fill(0)
+      };
+      msg.buttons = msg.buttons.slice();
+      msg.buttons[buttonIndex] = 1;
+      if (buttonIndex === 7) {
+        clearChartSamples();
+        chartCaptureEnabled = true;
+      } else if (buttonIndex === 6) {
+        chartCaptureEnabled = false;
+      }
+      publishJoy(msg);
+      if (buttonIndex === 7) {
+        el.modeMetric.textContent = selectedControlMode === "open_loop" ? "Boucle ouverte" : "Carotte LQR";
+      }
+      setTimeout(() => {
+        msg.header.stamp = nowStamp();
+        msg.buttons[buttonIndex] = 0;
+        publishJoy(msg);
+      }, 120);
+    }
+
+    function updateRecordButton() {
+      el.recordBtn.classList.toggle("active", recordEnabled);
+      el.recordBtn.disabled = recordRequestPending;
+      if (recordRequestPending) {
+        el.recordBtn.textContent = "En attente";
+      } else {
+        el.recordBtn.textContent = recordEnabled ? "Arreter" : "Record";
+      }
+      updateControlLocks();
+    }
+
+    function toggleRecording() {
+      if (recordRequestPending) return;
+
+      const requestedState = !recordEnabled;
+      const sent = send({
+        op: "call_service",
+        id: "playback-recording-" + Date.now(),
+        service: "/playback_recording",
+        type: "sub_interfaces/srv/PlaybackRecording",
+        args: { start_recording: requestedState }
+      });
+      if (!sent) {
+        console.warn("ROS bridge is not connected; recording request not sent");
+        return;
+      }
+
+      recordEnabled = requestedState;
+      recordRequestPending = true;
+      updateRecordButton();
+    }
+
+    function updatePlaybackButtons() {
+      el.loadPlaybackBtn.disabled = playbackRequestPending;
+      el.playPlaybackBtn.disabled = playbackRequestPending;
+      el.stopPlaybackBtn.disabled = playbackRequestPending;
+      el.playbackMetric.textContent = playbackRequestPending ? "En attente" : playbackStatus;
+      updateControlLocks();
+    }
+
+    function handlePlaybackStatus(msg) {
+      if (!msg) return;
+      latestPlaybackStatus = msg;
+      playbackReferenceMode = msg.reference_mode || playbackReferenceMode;
+      playbackProgressionMode = msg.progression_mode || playbackProgressionMode;
+      playbackType = msg.playback_type || playbackType;
+      playbackActive = ["playing", "recording"].includes(msg.state);
+      if (!recordRequestPending) {
+        if (msg.state === "recording" && !recordEnabled) {
+          recordEnabled = true;
+          updateRecordButton();
+        } else if (recordEnabled && msg.state !== "recording") {
+          recordEnabled = false;
+          updateRecordButton();
+        }
+      }
+      const current = Number(msg.current_index || 0);
+      const total = Number(msg.waypoint_count || 0);
+      playbackStatus = msg.state + (total ? " " + (current + 1) + "/" + total : "");
+      if (msg.error) playbackStatus = msg.state + ": " + msg.error;
+      const state = String(msg.state || "");
+      if (state !== previousPlaybackState || msg.error) {
+        const level = (
+          state === "error"
+          || state === "timeout"
+          || Boolean(msg.error)
+        ) ? "error" : (
+          state === "playing" || state === "recording" || state === "completed"
+        ) ? "ok" : "info";
+        const detail = [
+          state || "statut",
+          total ? (current + 1) + "/" + total : "",
+          msg.playback_type || "",
+          msg.reference_mode || "",
+          msg.progression_mode || "",
+          msg.error || ""
+        ].filter(Boolean).join(" | ");
+        addEvent(level, "playback", detail);
+        previousPlaybackState = state;
+      }
+      updatePlaybackModeButtons();
+      updatePlaybackButtons();
+    }
+
+    function markTelemetry(name, message) {
+      const item = telemetry[name];
+      if (!item) return;
+      if (item.healthState !== "active") {
+        addEvent("ok", "topic", name + " reçoit des messages");
+      }
+      item.healthState = "active";
+      item.lastAt = Date.now();
+      item.count += 1;
+      item.message = message;
+    }
+
+    function quaternionToEuler(orientation) {
+      if (!orientation) return { roll: 0, pitch: 0, yaw: 0 };
+      const x = Number(orientation.x || 0);
+      const y = Number(orientation.y || 0);
+      const z = Number(orientation.z || 0);
+      const w = Number(orientation.w || 1);
+      const sinRoll = 2 * (w * x + y * z);
+      const cosRoll = 1 - 2 * (x * x + y * y);
+      const sinPitch = clamp(2 * (w * y - z * x), -1, 1);
+      const sinYaw = 2 * (w * z + x * y);
+      const cosYaw = 1 - 2 * (y * y + z * z);
+      return {
+        roll: Math.atan2(sinRoll, cosRoll),
+        pitch: Math.asin(sinPitch),
+        yaw: Math.atan2(sinYaw, cosYaw)
+      };
+    }
+
+    function wrapAngle(angle) {
+      return Math.atan2(Math.sin(angle), Math.cos(angle));
+    }
+
+    function degrees(value) {
+      return value * 180 / Math.PI;
+    }
+
+    function fixed(value, digits = 2) {
+      const number = Number(value);
+      return Number.isFinite(number) ? number.toFixed(digits) : "-";
+    }
+
+    function vectorText(vector, digits = 2) {
+      if (!vector) return "-";
+      return [
+        fixed(vector.x, digits),
+        fixed(vector.y, digits),
+        fixed(vector.z, digits)
+      ].join(" / ");
+    }
+
+    function pushChartSample(buffer, sample) {
+      buffer.push(sample);
+      const cutoff = sample.t - chartWindowMs;
+      while (buffer.length && buffer[0].t < cutoff) buffer.shift();
+    }
+
+    function clearChartSamples() {
+      Object.values(chartSamples).forEach((buffer) => { buffer.length = 0; });
+      lastChartOdomAt = 0;
+      drawAllCharts();
+    }
+
+    function sampleChartsFromTelemetry(odom, target) {
+      if (!chartCaptureEnabled) return;
+      if (!odom || !odom.pose || !odom.pose.pose || telemetry.odometry.lastAt === lastChartOdomAt) return;
+      lastChartOdomAt = telemetry.odometry.lastAt;
+      const now = Date.now();
+      const pose = odom.pose.pose;
+      const twist = odom.twist && odom.twist.twist;
+      const angles = quaternionToEuler(pose.orientation);
+      const targetAngles = target && target.pose ? quaternionToEuler(target.pose.orientation) : null;
+      const efforts = telemetry.thrusters.message && telemetry.thrusters.message.efforts;
+      const effortValues = Array.isArray(efforts) ? efforts.map(Number).filter(Number.isFinite) : [];
+      const currentDepth = -Number(pose.position.z || 0);
+      const targetDepth = target && target.pose ? -Number(target.pose.position.z || 0) : null;
+      const targetYawDeg = targetAngles ? degrees(targetAngles.yaw) : null;
+      const yawDeg = degrees(angles.yaw);
+      const yawErrorDeg = targetAngles ? degrees(wrapAngle(targetAngles.yaw - angles.yaw)) : null;
+
+      pushChartSample(chartSamples.yaw, {
+        t: now,
+        yaw: yawDeg,
+        target: targetYawDeg,
+        error: yawErrorDeg
+      });
+      pushChartSample(chartSamples.depth, {
+        t: now,
+        depth: currentDepth,
+        target: targetDepth
+      });
+      pushChartSample(chartSamples.angularRate, {
+        t: now,
+        roll: degrees(twist && twist.angular ? Number(twist.angular.x || 0) : 0),
+        pitch: degrees(twist && twist.angular ? Number(twist.angular.y || 0) : 0),
+        yaw: degrees(twist && twist.angular ? Number(twist.angular.z || 0) : 0)
+      });
+      if (effortValues.length) {
+        pushChartSample(chartSamples.thruster, {
+          t: now,
+          max: Math.max(...effortValues),
+          min: Math.min(...effortValues),
+          abs: Math.max(...effortValues.map((value) => Math.abs(value)))
+        });
+      }
+      drawAllCharts();
+    }
+
+    function drawAllCharts() {
+      drawChart(el.yawChart, chartSamples.yaw, [
+        { key: "yaw", label: "yaw", color: "#4f8cff" },
+        { key: "target", label: "target", color: "#31c67a" },
+        { key: "error", label: "error", color: "#ffb020" }
+      ], "deg");
+      drawChart(el.depthChart, chartSamples.depth, [
+        { key: "depth", label: "depth", color: "#4f8cff" },
+        { key: "target", label: "target", color: "#31c67a" }
+      ], "m");
+      drawChart(el.angularRateChart, chartSamples.angularRate, [
+        { key: "roll", label: "roll", color: "#a78bfa" },
+        { key: "pitch", label: "pitch", color: "#31c67a" },
+        { key: "yaw", label: "yaw", color: "#ffb020" }
+      ], "deg/s");
+      drawChart(el.thrusterChart, chartSamples.thruster, [
+        { key: "max", label: "max", color: "#31c67a" },
+        { key: "min", label: "min", color: "#ff4d4f" },
+        { key: "abs", label: "abs", color: "#4f8cff" }
+      ], "N");
+      updateChartReadouts();
+    }
+
+    function updateChartReadouts() {
+      const lastYaw = chartSamples.yaw.at(-1);
+      el.yawChartReadout.textContent = lastYaw
+        ? "yaw " + fixed(lastYaw.yaw, 1) + " / err " + fixed(lastYaw.error, 1) + " deg"
+        : "-";
+      const lastDepth = chartSamples.depth.at(-1);
+      el.depthChartReadout.textContent = lastDepth
+        ? fixed(lastDepth.depth, 2) + " m"
+        : "-";
+      const lastRate = chartSamples.angularRate.at(-1);
+      el.angularRateChartReadout.textContent = lastRate
+        ? "yaw rate " + fixed(lastRate.yaw, 1) + " deg/s"
+        : "-";
+      const lastThruster = chartSamples.thruster.at(-1);
+      el.thrusterChartReadout.textContent = lastThruster
+        ? "abs " + fixed(lastThruster.abs, 2) + " N"
+        : "-";
+    }
+
+    function drawChart(canvas, samples, series, unit) {
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      const width = Math.max(320, Math.round(rect.width || canvas.width));
+      const height = Math.max(160, Math.round(rect.height || canvas.height));
+      if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
+        canvas.width = Math.round(width * ratio);
+        canvas.height = Math.round(height * ratio);
+      }
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "#090d11";
+      ctx.fillRect(0, 0, width, height);
+
+      const pad = { left: 46, right: 12, top: 12, bottom: 26 };
+      const plotW = width - pad.left - pad.right;
+      const plotH = height - pad.top - pad.bottom;
+      ctx.strokeStyle = "rgba(148, 163, 184, 0.18)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i += 1) {
+        const y = pad.top + (plotH * i / 4);
+        ctx.beginPath();
+        ctx.moveTo(pad.left, y);
+        ctx.lineTo(width - pad.right, y);
+        ctx.stroke();
+      }
+
+      if (!samples.length) {
+        ctx.fillStyle = "#6f8297";
+        ctx.font = "13px ui-monospace, Menlo, Consolas, monospace";
+        ctx.fillText("En attente", pad.left + 8, pad.top + 24);
+        return;
+      }
+
+      const now = samples[samples.length - 1].t;
+      const start = Math.max(samples[0].t, now - chartWindowMs);
+      const visible = samples.filter((sample) => sample.t >= start);
+      const values = [];
+      visible.forEach((sample) => {
+        series.forEach((line) => {
+          const value = Number(sample[line.key]);
+          if (Number.isFinite(value)) values.push(value);
+        });
+      });
+      if (!values.length) return;
+      let min = Math.min(...values);
+      let max = Math.max(...values);
+      if (Math.abs(max - min) < 1e-6) {
+        min -= 1;
+        max += 1;
+      }
+      const margin = Math.max((max - min) * 0.12, 0.5);
+      min -= margin;
+      max += margin;
+
+      const xFor = (sample) => {
+        const span = Math.max(1, now - start);
+        return pad.left + ((sample.t - start) / span) * plotW;
+      };
+      const yFor = (value) => pad.top + (1 - ((value - min) / (max - min))) * plotH;
+
+      ctx.fillStyle = "#6f8297";
+      ctx.font = "11px ui-monospace, Menlo, Consolas, monospace";
+      ctx.fillText(fixed(max, 1), 6, pad.top + 4);
+      ctx.fillText(fixed(min, 1), 6, pad.top + plotH);
+      ctx.fillText(unit, 8, height - 8);
+
+      series.forEach((line) => {
+        ctx.strokeStyle = line.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        let started = false;
+        visible.forEach((sample) => {
+          const value = Number(sample[line.key]);
+          if (!Number.isFinite(value)) return;
+          const x = xFor(sample);
+          const y = yFor(value);
+          if (!started) {
+            ctx.moveTo(x, y);
+            started = true;
+          } else {
+            ctx.lineTo(x, y);
+          }
+        });
+        if (started) ctx.stroke();
+      });
+
+      let legendX = pad.left + 6;
+      series.forEach((line) => {
+        ctx.fillStyle = line.color;
+        ctx.fillRect(legendX, height - 17, 8, 8);
+        ctx.fillStyle = "#c8d3df";
+        ctx.fillText(line.label, legendX + 12, height - 9);
+        legendX += 58;
+      });
+    }
+
+    function updateTopicRates() {
+      Object.values(telemetry).forEach((item) => {
+        item.rate = item.count;
+        item.count = 0;
+      });
+    }
+
+    function updateTopicRow(name, prefix) {
+      const item = telemetry[name];
+      const ageMs = item.lastAt ? Date.now() - item.lastAt : Infinity;
+      const health = document.getElementById(prefix + "Health");
+      const rate = document.getElementById(prefix + "Rate");
+      const age = document.getElementById(prefix + "Age");
+      if (!health || !rate || !age) return;
+      if (!item.lastAt) {
+        health.textContent = "Attente";
+        health.style.color = "var(--quiet)";
+      } else if (ageMs > item.staleMs) {
+        health.textContent = "Périmé";
+        health.style.color = "var(--red)";
+        if (item.healthState !== "stale") {
+          item.healthState = "stale";
+          addEvent("warn", "topic", name + " ne publie plus");
+        }
+      } else {
+        health.textContent = "Actif";
+        health.style.color = "var(--green)";
+        item.healthState = "active";
+      }
+      rate.textContent = item.rate + " Hz";
+      age.textContent = item.lastAt ? (ageMs / 1000).toFixed(1) + " s" : "-";
+    }
+
+    function latestTarget() {
+      const playbackTarget = telemetry.playbackTarget;
+      const controlTarget = telemetry.controlTarget;
+      const playbackFresh = (
+        playbackTarget.message
+        && Date.now() - playbackTarget.lastAt <= playbackTarget.staleMs
+      );
+      const controlFresh = (
+        controlTarget.message
+        && Date.now() - controlTarget.lastAt <= controlTarget.staleMs
+      );
+      if (
+        playbackActive
+        && playbackFresh
+      ) {
+        return playbackTarget.message;
+      }
+      if (!controlFresh && !playbackFresh) return null;
+      if (!controlFresh) return playbackTarget.message;
+      if (!playbackFresh) return controlTarget.message;
+      return controlTarget.lastAt >= playbackTarget.lastAt
+        ? controlTarget.message
+        : playbackTarget.message;
+    }
+
+    function updateTelemetryDebug() {
+      updateTopicRow("odometry", "odom");
+      updateTopicRow("controlTarget", "controlTarget");
+      updateTopicRow("playbackTarget", "playbackTarget");
+      updateTopicRow("thrusters", "thruster");
+      updateTopicRow("playback", "playback");
+
+      setDot(el.debugPwmDot, disablePwmReceived ? (controlStopped ? "bad" : "ok") : "warn");
+      el.debugPwmState.textContent = disablePwmReceived
+        ? (controlStopped ? "Désactivés" : "Actifs")
+        : "Inconnu";
+      setDot(el.debugKillDot, killSwitchArmed === null ? "warn" : (killSwitchArmed ? "ok" : "bad"));
+      el.debugKillState.textContent = killSwitchArmed === null
+        ? "Inconnue"
+        : (killSwitchArmed ? "Armée" : "Retirée");
+      setDot(el.debugMag2Dot, magneticSwitch2Active === null ? "warn" : "ok");
+      el.debugMag2State.textContent = magneticSwitch2Active === null
+        ? "Inconnue"
+        : (magneticSwitch2Active ? "Active" : "Inactive");
+
+      if (latestPlaybackStatus) {
+        const current = Number(latestPlaybackStatus.current_index || 0);
+        const total = Number(latestPlaybackStatus.waypoint_count || 0);
+        el.debugPlaybackState.textContent = String(latestPlaybackStatus.state || "-").toUpperCase();
+        el.debugPlaybackDetail.textContent = [
+          total ? "Point " + (current + 1) + "/" + total : "Aucun point",
+          latestPlaybackStatus.playback_type || "-",
+          latestPlaybackStatus.reference_mode || "-",
+          latestPlaybackStatus.progression_mode || "-",
+          latestPlaybackStatus.error || ""
+        ].filter(Boolean).join(" | ");
+      }
+
+      const odom = telemetry.odometry.message;
+      if (odom && odom.pose && odom.pose.pose) {
+        const pose = odom.pose.pose;
+        const twist = odom.twist && odom.twist.twist;
+        const angles = quaternionToEuler(pose.orientation);
+        el.debugPosition.textContent = vectorText(pose.position) + " m";
+        el.debugOrientation.textContent = [
+          fixed(degrees(angles.roll), 1),
+          fixed(degrees(angles.pitch), 1),
+          fixed(degrees(angles.yaw), 1)
+        ].join(" / ") + "°";
+        el.debugLinearVelocity.textContent = vectorText(twist && twist.linear) + " m/s";
+        el.debugAngularVelocity.textContent = vectorText(twist && twist.angular) + " rad/s";
+        el.debugDepth.textContent = fixed(-Number(pose.position.z || 0), 2) + " m";
+        el.debugOdomFrame.textContent = [
+          odom.header && odom.header.frame_id,
+          odom.child_frame_id
+        ].filter(Boolean).join(" → ") || "-";
+
+        const target = latestTarget();
+        if (target && target.pose) {
+          const targetAngles = quaternionToEuler(target.pose.orientation);
+          const dx = Number(target.pose.position.x || 0) - Number(pose.position.x || 0);
+          const dy = Number(target.pose.position.y || 0) - Number(pose.position.y || 0);
+          const dz = Number(target.pose.position.z || 0) - Number(pose.position.z || 0);
+          el.debugTargetSource.textContent = target.source_mode || "-";
+          el.debugTargetPosition.textContent = vectorText(target.pose.position) + " m";
+          el.debugTargetOrientation.textContent = [
+            fixed(degrees(targetAngles.roll), 1),
+            fixed(degrees(targetAngles.pitch), 1),
+            fixed(degrees(targetAngles.yaw), 1)
+          ].join(" / ") + "°";
+          el.debugHorizontalError.textContent = fixed(Math.hypot(dx, dy), 3) + " m";
+          el.debugDepthError.textContent = fixed(dz, 3) + " m";
+          el.debugYawError.textContent = fixed(
+            degrees(wrapAngle(targetAngles.yaw - angles.yaw)),
+            1
+          ) + "°";
+        } else {
+          el.debugTargetSource.textContent = "-";
+          el.debugTargetPosition.textContent = "-";
+          el.debugTargetOrientation.textContent = "-";
+          el.debugHorizontalError.textContent = "-";
+          el.debugDepthError.textContent = "-";
+          el.debugYawError.textContent = "-";
+        }
+        sampleChartsFromTelemetry(odom, target);
+      }
+
+      const efforts = telemetry.thrusters.message && telemetry.thrusters.message.efforts;
+      if (Array.isArray(efforts)) {
+        let maxEffort = 0;
+        thrusterDebugValues.forEach((value, index) => {
+          const effort = Number(efforts[index] || 0);
+          maxEffort = Math.max(maxEffort, Math.abs(effort));
+          value.textContent = fixed(effort, 2) + " N";
+          value.style.color = Math.abs(effort) > 13.5 ? "var(--amber)" : "var(--text)";
+        });
+        el.debugThrusterMax.textContent = "Max: " + fixed(maxEffort, 2) + " N";
+      }
+    }
+
+    function setPlaybackReference(mode) {
+      if (playbackActive || recordEnabled) return;
+      playbackReferenceMode = mode;
+      updatePlaybackModeButtons();
+      saveSettings();
+    }
+
+    function setPlaybackProgression(mode) {
+      if (playbackActive || recordEnabled) return;
+      playbackProgressionMode = mode;
+      updatePlaybackModeButtons();
+      saveSettings();
+    }
+
+    function updatePlaybackModeButtons() {
+      el.referenceBodyBtn.classList.toggle("active", playbackReferenceMode === "body");
+      el.referenceWorldBtn.classList.toggle("active", playbackReferenceMode === "world");
+      el.progressionSetpointBtn.classList.toggle("active", playbackProgressionMode === "setpoint");
+      el.progressionTimestampBtn.classList.toggle("active", playbackProgressionMode === "timestamp");
+    }
+
+    function updateControlLocks() {
+      const modeLocked = playbackActive || recordEnabled;
+      [
+        el.referenceBodyBtn,
+        el.referenceWorldBtn,
+        el.progressionSetpointBtn,
+        el.progressionTimestampBtn,
+        el.manualAssistedModeBtn,
+        el.openLoopModeBtn
+      ].forEach((button) => { button.disabled = modeLocked; });
+      el.applyMatricesBtn.disabled = !controlStopped;
+    }
+
+    function sendPlaybackCommand(command) {
+      if (playbackRequestPending) return;
+      saveSettings();
+      const filePath = el.playbackPath.value.trim();
+      const requestedPlaybackType = selectedControlMode === "open_loop"
+        ? "open_loop"
+        : "assisted_target";
+      const requestedProgressionMode = requestedPlaybackType === "open_loop"
+        ? "timestamp"
+        : playbackProgressionMode;
+      const sent = send({
+        op: "call_service",
+        id: "playback-command-" + command + "-" + Date.now(),
+        service: "/playback_command",
+        type: "sub_interfaces/srv/PlaybackCommand",
+        args: {
+          command,
+          file_path: filePath,
+          loop: false,
+          reference_mode: playbackReferenceMode,
+          progression_mode: requestedProgressionMode,
+          playback_type: requestedPlaybackType
+        }
+      });
+      if (!sent) {
+        console.warn("ROS bridge is not connected; playback command not sent");
+        return;
+      }
+      playbackRequestPending = true;
+      playbackStatus = command;
+      updatePlaybackButtons();
+    }
+
+    function updateDebug() {
+      const age = lastJoyAt ? ((Date.now() - lastJoyAt) / 1000).toFixed(1) + "s" : "-";
+      el.debug.textContent = JSON.stringify({
+        rosbridge: Boolean(ws && ws.readyState === WebSocket.OPEN),
+        topic: joyTopic,
+        lastJoyAge: age,
+        recordEnabled,
+        recordRequestPending,
+        playbackStatus,
+        playbackType,
+        playbackRequestPending,
+        controlStopped,
+        chartCaptureEnabled,
+        killSwitchArmed,
+        magneticSwitch2Active,
+        lastJoy,
+        manualAssistedDebug,
+        openLoopDebug,
+        odometry: telemetry.odometry.message,
+        controlTarget: telemetry.controlTarget.message,
+        playbackTarget: telemetry.playbackTarget.message,
+        thrusters: telemetry.thrusters.message,
+        playback: telemetry.playback.message
+      }, null, 2);
+    }
+
+    function loop() {
+      const joy = readGamepad();
+      if (joy) {
+        publishJoy(joy);
+      }
+      updateTelemetryDebug();
+      updateDebug();
+    }
+
+    function updatePublishRate() {
+      const delta = publishCount - lastPublishCount;
+      lastPublishCount = publishCount;
+      el.publishRate.textContent = delta + " Hz";
+    }
+
+    function selectDashboardTab(tabName) {
+      document.querySelectorAll("[data-dashboard-tab]").forEach((panel) => {
+        panel.classList.toggle("tab-hidden", panel.dataset.dashboardTab !== tabName);
+      });
+      document.querySelectorAll("[data-tab-button]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.tabButton === tabName);
+      });
+      if (tabName === "debug") {
+        setTimeout(drawAllCharts, 0);
+      }
+    }
+
+    document.querySelectorAll("[data-tab-button]").forEach((button) => {
+      button.addEventListener("click", () => selectDashboardTab(button.dataset.tabButton));
+    });
+    document.getElementById("connectBtn").addEventListener("click", connect);
+    document.getElementById("localBtn").addEventListener("click", () => applyHost("127.0.0.1"));
+    document.getElementById("jetsonBtn").addEventListener("click", () => applyHost("192.168.0.10"));
+    document.getElementById("armBtn").addEventListener("click", armSelectedMode);
+    document.getElementById("stopBtn").addEventListener("click", () => sendSynthetic(6));
+    document.getElementById("manualAssistedModeBtn").addEventListener("click", () => setControlMode("manual_assisted"));
+    document.getElementById("openLoopModeBtn").addEventListener("click", () => setControlMode("open_loop"));
+    document.getElementById("recordBtn").addEventListener("click", toggleRecording);
+    document.getElementById("applyDepthLimitsBtn").addEventListener("click", applyDepthLimits);
+    document.getElementById("referenceBodyBtn").addEventListener("click", () => setPlaybackReference("body"));
+    document.getElementById("referenceWorldBtn").addEventListener("click", () => setPlaybackReference("world"));
+    document.getElementById("progressionSetpointBtn").addEventListener("click", () => setPlaybackProgression("setpoint"));
+    document.getElementById("progressionTimestampBtn").addEventListener("click", () => setPlaybackProgression("timestamp"));
+    document.getElementById("applyPlaybackSettingsBtn").addEventListener("click", applyPlaybackSettings);
+    document.getElementById("reloadMatricesBtn").addEventListener("click", requestControlParameters);
+    document.getElementById("applyMatricesBtn").addEventListener("click", applyMatrices);
+    document.getElementById("profileStandstillBtn").addEventListener("click", () => selectProfile("standstill"));
+    document.getElementById("profileForwardBtn").addEventListener("click", () => selectProfile("forward"));
+    document.getElementById("profileTurningBtn").addEventListener("click", () => selectProfile("turning"));
+    document.getElementById("loadPlaybackBtn").addEventListener("click", () => sendPlaybackCommand("load"));
+    document.getElementById("playPlaybackBtn").addEventListener("click", () => sendPlaybackCommand("play"));
+    document.getElementById("stopPlaybackBtn").addEventListener("click", () => sendPlaybackCommand("stop"));
+    document.getElementById("reloadCamerasBtn").addEventListener("click", () => reloadCameras());
+    document.getElementById("clearChartsBtn").addEventListener("click", clearChartSamples);
+    document.getElementById("clearDebugBtn").addEventListener("click", () => {
+      lastJoy = null;
+      manualAssistedDebug = null;
+      openLoopDebug = null;
+      Object.values(telemetry).forEach((item) => {
+        item.lastAt = 0;
+        item.count = 0;
+        item.rate = 0;
+        item.message = null;
+        item.healthState = "waiting";
+      });
+      updateDebug();
+    });
+    el.clearEventsBtn.addEventListener("click", () => {
+      el.eventLog.replaceChildren();
+      el.eventCount.textContent = "0 événement";
+    });
+
+    el.cam1.addEventListener("load", () => {
+      setCameraState(1, cameraSource[1] === "unity" ? "UNITY" : "PHYSIQUE");
+    });
+    el.cam2.addEventListener("load", () => {
+      setCameraState(2, cameraSource[2] === "unity" ? "UNITY" : "PHYSIQUE");
+    });
+    el.cam1.addEventListener("error", () => { setCameraState(1, "offline"); });
+    el.cam2.addEventListener("error", () => { setCameraState(2, "offline"); });
+
+    window.addEventListener("gamepadconnected", () => {
+      setDot(el.gamepadDot, "ok");
+      el.gamepadText.textContent = "Actif";
+    });
+    window.addEventListener("gamepaddisconnected", () => {
+      setDot(el.gamepadDot, "bad");
+      el.gamepadText.textContent = "Absent";
+    });
+    window.addEventListener("resize", drawAllCharts);
+
+    loadSettings();
+    updateControlModeButtons();
+    updatePlaybackModeButtons();
+    updateControlLocks();
+    if ((window.location.protocol === "http:" || window.location.protocol === "https:") && window.location.hostname) {
+      applyHost(window.location.hostname);
+      setTimeout(connect, 150);
+    }
+    resetInputs();
+    drawAllCharts();
+    addEvent("info", "dashboard", "Dashboard prêt");
+    publishTimer = setInterval(loop, publishPeriodMs);
+    setInterval(updatePublishRate, 1000);
+    setInterval(updateTopicRates, 1000);
+    setInterval(updateCameraSources, 500);
+    setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) requestControlParameters();
+    }, 1500);
+    updatePlaybackButtons();
+    updateDebug();
+  </script>
+</body>
+</html>

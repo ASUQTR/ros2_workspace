@@ -9,7 +9,6 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(rclpy REQUIRED)
-find_package(rclpy REQUIRED)
 
 
 # 1. Install your Python module (the directory containing your __init__.py)
@@ -20,6 +19,7 @@ ament_python_install_package(${PROJECT_NAME})
 # or you can point directly to the python files inside your module.
 install(PROGRAMS
   scripts/playback_node.py
+  scripts/export_recordings.sh
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -9,7 +9,6 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(rclpy REQUIRED)
-find_package(rclpy REQUIRED)
 
 
 # 1. Install your Python module (the directory containing your __init__.py)
@@ -26,6 +25,7 @@ install(PROGRAMS
   scripts/gpio_node.py
   scripts/indicator_node.py
   scripts/sonar_node.py
+  scripts/camera_dashboard_server.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -34,6 +34,7 @@ install(PROGRAMS
 install(DIRECTORY
   launch
   config
+  web
   DESTINATION share/${PROJECT_NAME}
 )
 
