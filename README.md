@@ -1,11 +1,5 @@
 # ASUQTR ROS 2 Workspace
 
-> [!NOTE]
-> This branch is focused on manual-assisted "carrot on a stick" control and
-> record/playback development. See [`BRANCH_README.md`](BRANCH_README.md) before
-> using this branch as a reference for EKF, sensor fusion, or pool-test
-> navigation configuration.
-
 <p align="center">
   <img src="docs/logosub.png" alt="ASUQTR logo" width="80" style="vertical-align: middle; margin-right: 30px;"/><img src="docs/sub.JPG" alt="ASUQTR Submarine" width="280" style="vertical-align: middle;"/><img src="docs/ros2.png" alt="ROS2" width="80" style="vertical-align: middle; margin-left: 30px;"/>
 </p>
@@ -16,11 +10,11 @@ Welcome to the core ROS 2 workspace for the ASUQTR submarine. This repository co
 ASUQTR's ROS2 software architecture contains 5 ROS2 packages, following a typical layered architecture patern :
 > [!TIP]
 > Click the sub package links to go to their README.md and get further details and specifications
-* [`sub_hardware`](workspace/packages/sub_hardware/)
-* [`sub_control`](workspace/packages/sub_control/)
-* [`sub_autonomy`](workspace/packages/sub_autonomy/)
-* [`sub_interfaces`](workspace/packages/sub_interfaces/)
-* [`sub_launch`](workspace/packages/sub_launch/)
+* [`sub_hardware`](src/sub_hardware/)
+* [`sub_control`](src/sub_control/)
+* [`sub_autonomy`](src/sub_autonomy/)
+* [`sub_interfaces`](src/sub_interfaces/)
+* [`sub_launch`](src/sub_launch/)
 
 
 In the following architecture diagram, __BLACK__ icons are ASUQTR nodes/custom code, while __WHITE__ icons are standard ROS2 packages.
@@ -75,12 +69,12 @@ You now have a full IDE and integrated terminals directly inside the ROS 2 envir
 </a>
 
 1. SSH log into the Jetson Xavier.  [See these instructions](#ssh)
-2. Clone this repo via SSH. It can live inside a larger working folder; the scripts resolve paths relative to the repo.
-3. `cd` into the repo and run `env/jetson/setup.sh`. This will setup ssd, docker, jetson IO permissions, etc. and deploy ASUQTR infrastructure.
+2. Clone this repo via SSH on the in the `$HOME` directory
+3. `cd` into the repo and run `setup_xavier.sh`. This will setup ssd, docker, jetson IO permissions, etc. and deploy ASUQTR infrastructure.
     ```bash
     # While logged into a Jetson Xavier over SSH
-    cd /path/to/ros2_workspace
-    sudo ./env/jetson/setup.sh
+    cd ~/ros2_workspace
+    sudo ./setup_jetson.sh
     ```
 4. Reboot the jetson xavier
 
@@ -89,7 +83,7 @@ You now have a full IDE and integrated terminals directly inside the ROS 2 envir
 For software development and simulation, we use Docker. The included `docker-compose.yaml` file in this repository allows to spin up the ROS 2 development container alongside the ASUQTR web dashboard.
 ### 🐳📦 Starting ASUQTR containers
 > [!WARNING]
-> If you ran the `env/jetson/setup.sh` script from [1. Install](#install) step, the containers have already been started with a a `unless-stopped` policy, which means they will always on Xavier power up, unless you explicitely stop them with in a terminal
+> If you ran the `setup_xavier.sh` script from [1. Install](#install) step, the containers have already been started with a a `unless-stopped` policy, which means they will always on Xavier power up, unless you explicitely stop them with in a terminal
 
 1. To verify if both the `asuqtr_ros2` and `asuqtr-dashboard` containers are running:
    ```bash
@@ -113,119 +107,6 @@ To view the UI, simply open a web browser (Chrome, Firefox, etc.) on your host c
 ```text
 http://<JETSON_IP>
 ```
-
-### 🎮 Manual Assisted Pilot Dashboard
-The ROS workspace also includes a standalone operator UI for the `manual_assisted` control workflow:
-
-```text
-workspace/packages/sub_hardware/web/manual_assisted_dashboard.html
-```
-
-This dashboard connects to ROS through `rosbridge`, publishes `sensor_msgs/msg/Joy` on `/dashboard/gamepad`, and displays the camera endpoints exposed by the vision service.
-
-For simulation or bench testing:
-
-1. Start the ROS launch that includes `control_node` and `rosbridge_server`.
-   ```bash
-   ros2 launch sub_launch unity_sim.launch.yaml
-   ```
-2. Open the dashboard served by the camera service, or open
-   `workspace/packages/sub_hardware/web/manual_assisted_dashboard.html` locally.
-3. Use `Local` for a local simulation host or set the Jetson IP, then click `Connecter`.
-4. Confirm the control node receives joystick messages.
-   ```bash
-   ros2 topic echo /dashboard/gamepad
-   ```
-
-The dashboard expects ROSBridge on port `9090`. The gamepad mapping matches `workspace/packages/sub_control/scripts/control_node.py`: browser Back/Start are remapped to ROS button indices `6` and `7`, and the trigger axes are published as Joy axes `2` and `5`.
-
-Unity and the dashboard both connect as WebSocket clients to the same `rosbridge_websocket` server. They should both use `ws://<ROS_HOST>:9090`; do not start a second `rosbridge_websocket` on the same port.
-
-### 🚀 Manual Assisted Launch Files
-
-The current manual-assisted test workflow uses YAML launch files.
-
-Use `unity_sim.launch.yaml` for Unity simulation and dashboard development:
-
-```bash
-ros2 launch sub_launch unity_sim.launch.yaml
-```
-
-This starts:
-
-* `control_node` in `manual_assisted` mode;
-* `robot_localization` using the Unity EKF config;
-* `rosbridge_websocket` on port `9090`;
-* `playback_node`;
-* `camera_dashboard_server` on port `6969`, with physical cameras disabled.
-
-Use `pool.launch.yaml` for real-sub pool tests with the
-current no-magnetometer sensor-fusion setup:
-
-```bash
-ros2 launch sub_launch pool.launch.yaml
-```
-
-This starts:
-
-* `control_node` in `manual_assisted` mode;
-* `robot_localization` with `EKF_no_mag_yaw.yaml` by default;
-* physical hardware nodes: actuator, depth sensor, GPIO, DVL, and VectorNav;
-* `rosbridge_websocket` on port `9090`;
-* `playback_node`;
-* `camera_dashboard_server` on port `6969`, with physical camera streams.
-
-Use `sub.launch.yaml` for the normal real-sub stack without the extra manual
-assisted pool-test helpers. Its default control mode is `lqr_tuning`, but it can
-be overridden:
-
-```bash
-ros2 launch sub_launch sub.launch.yaml control_mode:=manual_assisted
-```
-
-Use `lqr_tuning.launch.yaml` when testing the standalone LQR tuning helper.
-
-The older Python pool launch was removed from this branch to keep the launch
-path aligned with the team's YAML launch convention.
-
-The default camera devices are indices `0` and `4`. Override them when needed:
-
-```bash
-ros2 launch sub_launch pool.launch.yaml camera_1:=0 camera_2:=2
-```
-
-To save one JPEG every five frames from both streams:
-
-```bash
-ros2 launch sub_launch pool.launch.yaml \
-  save_video:=true label:=pool-test-01
-```
-
-The dashboard is served on port `6969`. From the pilot laptop, an SSH tunnel is
-recommended so the page, ROSBridge, and browser gamepad are all accessed through
-localhost:
-
-```bash
-ssh -L 6969:127.0.0.1:6969 -L 9090:127.0.0.1:9090 asuqtr@<JETSON_IP>
-```
-
-Then open `http://localhost:6969/`. Before pressing Start, verify:
-
-```bash
-ros2 param get /control_node control_mode
-ros2 topic echo /dashboard/gamepad
-ros2 topic echo /odometry/filtered --once
-```
-
-To verify the Unity -> EKF path:
-
-```bash
-ros2 topic info /unity/odometry/raw -v
-ros2 topic echo --once /unity/odometry/raw
-ros2 topic echo --once /odometry/filtered
-```
-
-The Unity scene publishes `/unity/odometry/raw` as `nav_msgs/msg/Odometry`, and `robot_localization_unity.yaml` feeds that topic into the EKF as `odom0`.
 
 ## 🛠️ 3. Build ROS2 Workspace
 
@@ -284,4 +165,4 @@ ros2 topic pub -1 /debug/target_pose geometry_msgs/msg/PoseStamped "{pose: {posi
 ```
 
 > [!IMPORTANT]
-> This command is only available if the `control_node` is in `lqr_tuning` mode! See `workspace/packages/sub_control/config/params.yaml`
+> This command is only available if the `control_node` is in `lqr_tuning` mode! See `src/sub_control/config/params.yaml`
