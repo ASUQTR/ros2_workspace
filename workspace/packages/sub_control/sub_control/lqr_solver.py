@@ -65,9 +65,11 @@ Bm[11][7] = -0.39463536905835478514559256667363
 # ==============================================================================
 # HYDRODYNAMIC FIT USED BY THE A MATRIX
 # ==============================================================================
-# Coefficients are positive acceleration gains. `SubLQRSolver.damping_sign`
-# applies the dissipative sign at runtime, and quadratic terms can be
-# SDRE-linearized using the current state magnitude.
+# Coefficients are positive acceleration gains. DISSIPATIVE_DAMPING_SIGN
+# applies the dissipative sign, and quadratic terms can be SDRE-linearized
+# using the current state magnitude. Damping is physically dissipative
+# (opposes motion), so this sign is fixed rather than a runtime parameter.
+DISSIPATIVE_DAMPING_SIGN = -1.0
 #
 # Marine axes used by the LQR: surge u, sway v, heave w, roll p, pitch q, yaw r.
 # Unity mapping in the Hydrodynamics component:
@@ -193,9 +195,6 @@ class SubLQRSolver:
         # Pre-allocate matrices to prevent heavy garbage collection overhead
         # during high-frequency (e.g., 200Hz) ROS odometry callbacks.
         self.system_dynamics_matrix = np.zeros((12, 12), dtype=np.float32)
-        # Damping terms are stored as positive magnitudes; -1.0 makes them
-        # dissipative in A by default.
-        self.damping_sign = -1.0
         # Last gain matrix successfully computed by the ARE solver.
         # Used as a fallback if the solver fails at a given operating point.
         self._last_valid_k_gain = None
@@ -206,17 +205,6 @@ class SubLQRSolver:
         # At 25 Hz, 25 cycles = 1 second — enough to ride a transient, short enough
         # to avoid running on a gain computed far from the current operating point.
         self.max_frozen_cycles = 25
-
-    def set_damping_sign(self, sign: float):
-        """
-        Set the global sign applied to diagonal damping terms in A.
-
-        Args:
-            sign (float): Must be +1.0 or -1.0.
-        """
-        if sign not in (-1.0, 1.0):
-            raise ValueError('damping_sign must be either -1.0 or 1.0')
-        self.damping_sign = float(sign)
 
     @staticmethod
     def quaternion_to_euler(x, y, z, w):
@@ -365,7 +353,7 @@ class SubLQRSolver:
         Am[6][0:4] = 0.0
         Am[6][4] = surge_buoyancy_coupling * cos_pitch
         Am[6][5] = 0.0
-        Am[6][6] = self.damping_sign * surge_damping
+        Am[6][6] = DISSIPATIVE_DAMPING_SIGN * surge_damping
         Am[6][7] = 1.1101113807200520490365790644713 * r
         Am[6][8] = -1.1101113807200520490365790644713 * q
         Am[6][9] = 0.0
@@ -378,7 +366,7 @@ class SubLQRSolver:
         Am[7][4] = net_buoyancy_accel * sin_pitch * sin_roll
         Am[7][5] = 0.0
         Am[7][6] = -0.90081051087988085109735042490748 * r
-        Am[7][7] = self.damping_sign * sway_damping
+        Am[7][7] = DISSIPATIVE_DAMPING_SIGN * sway_damping
         Am[7][8] = p
         Am[7][9] = w
         Am[7][10] = 0.0
@@ -391,7 +379,7 @@ class SubLQRSolver:
         Am[8][5] = 0.0
         Am[8][6] = 0.90081051087988085109735042490748 * q
         Am[8][7] = -1.0 * p
-        Am[8][8] = self.damping_sign * heave_damping
+        Am[8][8] = DISSIPATIVE_DAMPING_SIGN * heave_damping
         Am[8][9] = -1.0 * v
         Am[8][10] = 0.90081051087988085109735042490748 * u
         Am[8][11] = 0.0
@@ -401,7 +389,7 @@ class SubLQRSolver:
         Am[9][3] = -roll_restoring_accel * cos_pitch * cos_roll
         Am[9][4] = roll_restoring_accel * sin_pitch * sin_roll
         Am[9][5:9] = 0.0
-        Am[9][9] = self.damping_sign * roll_damping
+        Am[9][9] = DISSIPATIVE_DAMPING_SIGN * roll_damping
         Am[9][10] = -0.43503277217070903803294482236905 * r
         Am[9][11] = -0.43503277217070903803294482236905 * q
 
@@ -413,7 +401,7 @@ class SubLQRSolver:
         Am[10][7] = 0.0
         Am[10][8] = 5.5412526536013647028260744793525 * u
         Am[10][9] = 0.50914915170048566293331160158391 * r
-        Am[10][10] = self.damping_sign * pitch_damping
+        Am[10][10] = DISSIPATIVE_DAMPING_SIGN * pitch_damping
         Am[10][11] = 0.50914915170048566293331160158391 * p
 
         # Row 11: r_dot (Yaw Angular Acceleration)
@@ -423,7 +411,7 @@ class SubLQRSolver:
         Am[11][8] = 0.0
         Am[11][9] = -0.095203664338187202006697551579755 * q
         Am[11][10] = -0.095203664338187202006697551579755 * p
-        Am[11][11] = self.damping_sign * yaw_damping
+        Am[11][11] = DISSIPATIVE_DAMPING_SIGN * yaw_damping
 
         return Am
 

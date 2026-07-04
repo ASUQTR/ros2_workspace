@@ -61,9 +61,6 @@ control_node:
     # THRUST_ALLOC_MAT so LQR and open-loop use the same actuator model.
     thruster_force_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 
-    # The A matrix stores damping as positive magnitudes; -1.0 makes it dissipative.
-    damping_sign: -1.0
-
     # Determines the minimum % at which joystick are detected.
     # 0.1 means 10% of the joystick will be ignored
     # Increase the value if your joysticks are loose and cause unwanted movements
