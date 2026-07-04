@@ -44,3 +44,10 @@ launch:
       pkg: "sub_control"
       exec: "sonar_localization.py"
       name: "sonar_localization"
+
+  # Start ROSbridge for ASUQTR dashboard interaction
+  - node:
+      pkg: "rosbridge_server"
+      exec: "rosbridge_websocket"
+      name: "rosbridge_websocket"
+      # Default port is 9090. You can override it here if needed.

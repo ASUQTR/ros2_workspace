@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sonar Radar</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Sonar Radar</h1>
+    <span id="ws-status" class="status status-disconnected">disconnected</span>
+  </header>
+
+  <section class="controls">
+    <form id="scan-form">
+      <h2>Raw Scan — <code>/sonar/scan</code></h2>
+      <label>Start angle (deg) <input type="number" id="scan-start" value="0" min="0" max="359" /></label>
+      <label>Stop angle (deg) <input type="number" id="scan-stop" value="359" min="0" max="359" /></label>
+      <label>Range (m) <input type="number" id="scan-range" value="20" min="1" max="50" /></label>
+      <button type="submit">Trigger Scan</button>
+      <span id="scan-status" class="call-status"></span>
+    </form>
+
+    <form id="localize-form">
+      <h2>Localization — <code>get_sonar_position</code></h2>
+      <button type="submit">Trigger Localization</button>
+      <span id="localize-status" class="call-status"></span>
+    </form>
+  </section>
+
+  <section class="views">
+    <div class="view">
+      <h2>Layer 1 — Raw Sonar Scan</h2>
+      <canvas id="sonar-canvas" width="480" height="480"></canvas>
+    </div>
+    <div class="view">
+      <h2>Layer 2 — Pool &amp; AUV Position</h2>
+      <canvas id="pool-canvas" width="480" height="480"></canvas>
+    </div>
+  </section>
+
+  <script src="js/sonar-view.js"></script>
+  <script src="js/pool-view.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

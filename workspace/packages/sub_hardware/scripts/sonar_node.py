@@ -10,6 +10,7 @@ from sensor_msgs.msg import LaserEcho, MultiEchoLaserScan
 from std_msgs.msg import Header
 from typing import cast
 
+from sub_interfaces.msg import SonarScanResult
 from sub_interfaces.srv import SonarScan
 
 # ----------------------------
@@ -82,6 +83,9 @@ class SonarNode(Node):
             SonarScan,
             '/sonar/scan',
             self.scan,
+        )
+        self.scan_result_pub = self.create_publisher(
+            SonarScanResult, '/service/scan', 10
         )
 
     # ------------------------------------------------------------------
@@ -201,103 +205,120 @@ class SonarNode(Node):
         stop_deg = int(request.stop_angle)
         range_m = int(request.desired_range)
 
-        # Set the range by stretching the sample period over a FIXED number of
-        # samples, then match the transmit pulse to that range (BlueRobotics
-        # ping-viewer approach). sample_period is needed later to convert a
-        # sample index back into a distance, so keep it in a local.
-        sample_period = self.compute_sample_period(range_m)
-        transmit_duration = self.adjust_transmit_duration(range_m, sample_period)
-
-        self.device._number_of_samples = NUMBER_OF_SAMPLES
-        self.device._sample_period = sample_period
-        self.device._transmit_duration = transmit_duration
-        self.device._gain_setting = GAIN_SETTING
-        self.device._transmit_frequency = TRANSMIT_FREQUENCY
-
-        self.get_logger().info(
-            f'Scan range={range_m} m -> sample_period={sample_period} ticks, '
-            f'transmit_duration={transmit_duration} us, '
-            f'samples={NUMBER_OF_SAMPLES}'
-        )
-
-        # Build the ordered list of integer degree values to scan.
-        # If start <= stop: straightforward [start, ..., stop]
-        # If start > stop:  wrap through 0°: [start, ..., 359, 0, ..., stop]
-        if start_deg <= stop_deg:
-            angles_deg = list(range(start_deg, stop_deg + 1))
-        else:
-            angles_deg = list(range(start_deg, 360)) + list(range(0, stop_deg + 1))
-
-        angle_increment_deg = 1.0
-
         scan_msg = MultiEchoLaserScan()
         scan_msg.header = Header()
         scan_msg.header.stamp = self.get_clock().now().to_msg()
         scan_msg.header.frame_id = 'sonar_link'
-
-        # angle_min is the first degree in sequential order.
-        # For wrapped scans the angles monotonically increase beyond 360°
-        # (e.g. 345, 346, …, 360, 361, …, 375) so that
-        #   angle_at_index_i = angle_min + i × angle_increment
-        # remains valid and trig functions (which are 2π-periodic) give
-        # the correct Cartesian projections in the localization layer.
-        scan_msg.angle_min = math.radians(angles_deg[0])
-        scan_msg.angle_max = math.radians(
-            angles_deg[0] + len(angles_deg) - 1  # monotonically increasing
-        )
-        scan_msg.angle_increment = math.radians(angle_increment_deg)
-        scan_msg.time_increment = 0.0
         scan_msg.range_min = 0.0
         scan_msg.range_max = float(range_m)
 
-        ranges = []
-        intensities = []
+        try:
+            # Set the range by stretching the sample period over a FIXED number
+            # of samples, then match the transmit pulse to that range
+            # (BlueRobotics ping-viewer approach). sample_period is needed later
+            # to convert a sample index back into a distance, so keep it local.
+            sample_period = self.compute_sample_period(range_m)
+            transmit_duration = self.adjust_transmit_duration(range_m, sample_period)
 
-        for angle_deg in angles_deg:
-            # Ping360 uses gradians (400 per full revolution).
-            # Convert from degrees: grads = degrees × 400 / 360
-            angle_grads = int(angle_deg * 400 / 360)
-            msg = None
-            ctr = 0
-            CIRCUIT_BREAKER = 400
+            self.device._number_of_samples = NUMBER_OF_SAMPLES
+            self.device._sample_period = sample_period
+            self.device._transmit_duration = transmit_duration
+            self.device._gain_setting = GAIN_SETTING
+            self.device._transmit_frequency = TRANSMIT_FREQUENCY
 
-            while(msg is None):
-                if (ctr >= CIRCUIT_BREAKER):
-                    response.data = None
-                    self.get_logger().error(f'transmitAngle failed at {angle_deg}°')
-                    return
+            self.get_logger().info(
+                f'Scan range={range_m} m -> sample_period={sample_period} ticks, '
+                f'transmit_duration={transmit_duration} us, '
+                f'samples={NUMBER_OF_SAMPLES}'
+            )
 
-                msg = self.device.transmitAngle(angle_grads)
-                self.get_logger().debug(f"Retry {ctr} ({angle_deg})")
+            # Build the ordered list of integer degree values to scan.
+            # If start <= stop: straightforward [start, ..., stop]
+            # If start > stop:  wrap through 0°: [start, ..., 359, 0, ..., stop]
+            if start_deg <= stop_deg:
+                angles_deg = list(range(start_deg, stop_deg + 1))
+            else:
+                angles_deg = list(range(start_deg, 360)) + list(range(0, stop_deg + 1))
 
-                if msg is not None:
-                    # msg.data is the echo amplitude array (return strengths).
-                    # NOT msg.msg_data, which is the full serialized wire frame
-                    # (header + payload + checksum) and contains no usable echoes.
-                    idx, strength = self.estimate_wall_distance(msg.data)
-                    # Use the sample_period actually configured for this scan,
-                    # not a fixed constant — distance-per-sample scales with it.
-                    distance = self.sample_to_distance(idx, sample_period)
-        
-                    # BUG FIX: MultiEchoLaserScan.intensities expects LaserEcho[], not float[].
-                    ranges.append(LaserEcho(echoes=[distance]))
-                    intensities.append(LaserEcho(echoes=[float(strength)]))
+            angle_increment_deg = 1.0
 
-                ctr = ctr + 1
+            # angle_min is the first degree in sequential order.
+            # For wrapped scans the angles monotonically increase beyond 360°
+            # (e.g. 345, 346, …, 360, 361, …, 375) so that
+            #   angle_at_index_i = angle_min + i × angle_increment
+            # remains valid and trig functions (which are 2π-periodic) give
+            # the correct Cartesian projections in the localization layer.
+            scan_msg.angle_min = math.radians(angles_deg[0])
+            scan_msg.angle_max = math.radians(
+                angles_deg[0] + len(angles_deg) - 1  # monotonically increasing
+            )
+            scan_msg.angle_increment = math.radians(angle_increment_deg)
+            scan_msg.time_increment = 0.0
 
-                # Rate limiter: 10 Hz = 100 ms between pings, matching the
-                # Ping360's transmit/receive cycle. Plain sleep (not rclpy Rate):
-                # this callback runs inside the node's own executor thread, and
-                # an rclpy Rate needs that same executor to spin to wake it up —
-                # calling rate.sleep() here deadlocks forever.
-                time.sleep(0.1)
+            ranges = []
+            intensities = []
 
-        scan_msg.ranges = ranges
-        scan_msg.intensities = intensities
-        response.data = scan_msg
+            for angle_deg in angles_deg:
+                # Ping360 uses gradians (400 per full revolution).
+                # Convert from degrees: grads = degrees × 400 / 360
+                angle_grads = int(angle_deg * 400 / 360)
+                msg = None
+                ctr = 0
+                CIRCUIT_BREAKER = 400
+
+                while(msg is None):
+                    if (ctr >= CIRCUIT_BREAKER):
+                        raise RuntimeError(f'transmitAngle failed at {angle_deg}°')
+
+                    msg = self.device.transmitAngle(angle_grads)
+                    self.get_logger().debug(f"Retry {ctr} ({angle_deg})")
+
+                    if msg is not None:
+                        # msg.data is the echo amplitude array (return strengths).
+                        # NOT msg.msg_data, which is the full serialized wire frame
+                        # (header + payload + checksum) and contains no usable echoes.
+                        idx, strength = self.estimate_wall_distance(msg.data)
+                        # Use the sample_period actually configured for this scan,
+                        # not a fixed constant — distance-per-sample scales with it.
+                        distance = self.sample_to_distance(idx, sample_period)
+
+                        # BUG FIX: MultiEchoLaserScan.intensities expects LaserEcho[], not float[].
+                        ranges.append(LaserEcho(echoes=[distance]))
+                        intensities.append(LaserEcho(echoes=[float(strength)]))
+
+                    ctr = ctr + 1
+
+                    # Rate limiter: 10 Hz = 100 ms between pings, matching the
+                    # Ping360's transmit/receive cycle. Plain sleep (not rclpy Rate):
+                    # this callback runs inside the node's own executor thread, and
+                    # an rclpy Rate needs that same executor to spin to wake it up —
+                    # calling rate.sleep() here deadlocks forever.
+                    time.sleep(0.1)
+
+            scan_msg.ranges = ranges
+            scan_msg.intensities = intensities
+
+            response.data = scan_msg
+            response.success = True
+            response.message = ''
+
+        except Exception as exc:
+            self.get_logger().error(f'Sonar scan failed: {exc}')
+            response.data = scan_msg
+            response.success = False
+            response.message = str(exc)
 
         self.get_logger().info(f"{response.data}")
+        self._publish_scan_result(response)
         return response
+
+    def _publish_scan_result(self, response):
+        """Mirror the service response onto /service/scan for passive subscribers."""
+        result = SonarScanResult()
+        result.success = response.success
+        result.message = response.message
+        result.data = response.data
+        self.scan_result_pub.publish(result)
 
 def main(args=None):
     rclpy.init(args=args)

@@ -39,6 +39,7 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import Header
 
+from sub_interfaces.msg import SonarPositionResult
 from sub_interfaces.srv import GetSonarPosition, SonarScan
 
 
@@ -149,6 +150,9 @@ class SonarLocalizationNode(Node):
             self.sonar_position_callback,
             callback_group=self._localization_service_cb_group,
         )
+        self.position_result_pub = self.create_publisher(
+            SonarPositionResult, '/service/localization', 10
+        )
 
         self.get_logger().info(
             f'Sonar localization ready  '
@@ -163,11 +167,14 @@ class SonarLocalizationNode(Node):
     async def sonar_position_callback(self, request, response):
         """Triggered by mission manager.  Runs the full scan→fit→triangulate pipeline."""
         self.get_logger().info('Sonar position request received — scanning walls…')
+        response.pool_width_x = float(self.pool_x)
+        response.pool_length_y = float(self.pool_y)
 
         if not self.sonar_client.wait_for_service(timeout_sec=2.0):
             self.get_logger().error('Sonar scan service not available')
             response.success = False
             response.message = 'Sonar service unavailable'
+            self._publish_position_result(response)
             return response
 
         try:
@@ -177,11 +184,13 @@ class SonarLocalizationNode(Node):
             self.get_logger().error(f'Scan pipeline error: {exc}')
             response.success = False
             response.message = f'Pipeline error: {exc}'
+            self._publish_position_result(response)
             return response
 
         if x is None or y is None:
             response.success = False
             response.message = 'Insufficient wall detections to triangulate'
+            self._publish_position_result(response)
             return response
 
         pose = self._build_pose(x, y, yaw_rad, pos_variance, yaw_variance)
@@ -194,7 +203,18 @@ class SonarLocalizationNode(Node):
         response.pose = pose
 
         self.get_logger().info(response.message)
+        self._publish_position_result(response)
         return response
+
+    def _publish_position_result(self, response):
+        """Mirror the service response onto /service/localization for passive subscribers."""
+        result = SonarPositionResult()
+        result.success = response.success
+        result.message = response.message
+        result.pose = response.pose
+        result.pool_width_x = response.pool_width_x
+        result.pool_length_y = response.pool_length_y
+        self.position_result_pub.publish(result)
 
     # -----------------------------------------------------------------------
     # Wall scanning pipeline

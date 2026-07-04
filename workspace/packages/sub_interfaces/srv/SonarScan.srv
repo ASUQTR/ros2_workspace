@@ -3,3 +3,5 @@ uint16 stop_angle    # Stop angle in degrees (0–359); if start > stop, scan wr
 uint16 desired_range # Maximum range in meters
 ---
 sensor_msgs/MultiEchoLaserScan data
+bool success
+string message
