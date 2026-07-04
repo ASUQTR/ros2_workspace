@@ -6,7 +6,7 @@ workspace/recordings/
 *.mcap
 
 # --- Rosbags (recorded to the Jetson's NVMe drive, see docs/rosbags-storage.md) ---
-workspace/bags/
+workspace/bags
 
 # --- Python ---
 __pycache__/
