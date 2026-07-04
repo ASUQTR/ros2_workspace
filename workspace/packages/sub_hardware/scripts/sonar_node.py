@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import math
+import time
 
 import brping
 import numpy as np
@@ -59,9 +60,6 @@ class SonarNode(Node):
             self.device._sample_period = SAMPLE_PERIOD
             self.device._transmit_frequency = 750
 
-        # Rate limiter: 10 Hz = 100 ms between pings.
-        # The Ping360 needs ~100 ms per transmit/receive cycle.
-        self.rate = self.create_rate(10)
         self.scan_service = self.create_service(
             SonarScan,
             '/sonar/scan',
@@ -210,7 +208,12 @@ class SonarNode(Node):
             ranges.append(LaserEcho(echoes=[distance]))
             intensities.append(LaserEcho(echoes=[float(strength)]))
 
-            self.rate.sleep()
+            # Rate limiter: 10 Hz = 100 ms between pings, matching the
+            # Ping360's transmit/receive cycle. Plain sleep (not rclpy Rate):
+            # this callback runs inside the node's own executor thread, and
+            # an rclpy Rate needs that same executor to spin to wake it up —
+            # calling rate.sleep() here deadlocks forever.
+            time.sleep(0.1)
 
         scan_msg.ranges = ranges
         scan_msg.intensities = intensities

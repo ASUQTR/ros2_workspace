@@ -28,15 +28,13 @@ Mathematical operations are documented inline.
 """
 
 import math
-import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseWithCovarianceStamped
-from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import Header
 
@@ -126,23 +124,18 @@ class SonarLocalizationNode(Node):
         self._rng = np.random.default_rng(seed=42)
 
         # ---- ROS interfaces ----
-        # ReentrantCallbackGroup is required so that the localization service
-        # callback (which internally calls the sonar scan service) does not
-        # deadlock.  With a standard MutuallyExclusiveCallbackGroup the outer
-        # spin() cannot process the sonar response while waiting inside the
-        # service callback.  ReentrantCallbackGroup + MultiThreadedExecutor in
-        # main() allows both callbacks to run concurrently.
-        self.cb_group = ReentrantCallbackGroup()
-
-        self.sonar_client = self.create_client(
-            SonarScan, '/sonar/scan', callback_group=self.cb_group
-        )
+        # sonar_position_callback (below) is an async service callback: it
+        # awaits the sonar scan service's response instead of blocking on it.
+        # rclpy's executors (including SingleThreadedExecutor) suspend a
+        # coroutine callback at each `await` and use the same thread to
+        # process other ready work — such as the awaited response — so no
+        # ReentrantCallbackGroup / MultiThreadedExecutor is needed here.
+        self.sonar_client = self.create_client(SonarScan, '/sonar/scan')
 
         self.localization_service = self.create_service(
             GetSonarPosition,
             'get_sonar_position',
             self.sonar_position_callback,
-            callback_group=self.cb_group,
         )
 
         self.get_logger().info(
@@ -155,7 +148,7 @@ class SonarLocalizationNode(Node):
     # Public service callback
     # -----------------------------------------------------------------------
 
-    def sonar_position_callback(self, request, response):
+    async def sonar_position_callback(self, request, response):
         """Triggered by mission manager.  Runs the full scan→fit→triangulate pipeline."""
         self.get_logger().info('Sonar position request received — scanning walls…')
 
@@ -166,7 +159,7 @@ class SonarLocalizationNode(Node):
             return response
 
         try:
-            x, y, yaw_rad, pos_variance, yaw_variance = self._scan_all_walls()
+            x, y, yaw_rad, pos_variance, yaw_variance = await self._scan_all_walls()
             self.get_logger().info(f"{x}, {y}, {yaw_rad}")
         except Exception as exc:
             self.get_logger().error(f'Scan pipeline error: {exc}')
@@ -195,7 +188,7 @@ class SonarLocalizationNode(Node):
     # Wall scanning pipeline
     # -----------------------------------------------------------------------
 
-    def _scan_all_walls(
+    async def _scan_all_walls(
         self,
     ) -> Tuple[Optional[float], Optional[float], float, float, float]:
         """Scan all four walls and return (x, y, yaw_rad, pos_variance, yaw_variance).
@@ -205,7 +198,7 @@ class SonarLocalizationNode(Node):
         wall_results: List[WallResult] = []
 
         for cfg in WALL_CONFIGS:
-            result = self._analyze_wall(
+            result = await self._analyze_wall(
                 wall_name=cfg['name'],
                 scan_center_deg=cfg['scan'],
                 expected_inward_normal_deg=cfg['normal'],
@@ -273,7 +266,7 @@ class SonarLocalizationNode(Node):
 
         return x, y, yaw_rad, pos_variance, yaw_variance
 
-    def _analyze_wall(
+    async def _analyze_wall(
         self,
         wall_name: str,
         scan_center_deg: int,
@@ -294,7 +287,7 @@ class SonarLocalizationNode(Node):
         print(scan_center_deg)
 
         # ---- Step 1: collect point cloud ----
-        polar_points = self._scan_wall_sector(scan_center_deg)
+        polar_points = await self._scan_wall_sector(scan_center_deg)
         if len(polar_points) < self.min_points_per_wall:
             self.get_logger().warn(
                 f'{wall_name} wall: only {len(polar_points)} points '
@@ -398,7 +391,7 @@ class SonarLocalizationNode(Node):
     # Scan sector
     # -----------------------------------------------------------------------
 
-    def _scan_wall_sector(self, center_deg: int) -> List[Tuple[float, float]]:
+    async def _scan_wall_sector(self, center_deg: int) -> List[Tuple[float, float]]:
         """Call the sonar hardware service and return valid (angle_rad, distance) pairs.
 
         The sector spans [center_deg − half_width, center_deg + half_width].
@@ -419,11 +412,10 @@ class SonarLocalizationNode(Node):
 
         future = self.sonar_client.call_async(req)
 
-        # Busy-wait is safe here because this method runs in a worker thread
-        # spawned by the MultiThreadedExecutor.  The executor's other threads
-        # can continue processing the sonar response callback while we wait.
-        while rclpy.ok() and not future.done():
-            time.sleep(0.01)
+        # Awaiting (rather than busy-waiting) lets the executor process other
+        # ready work — including the sonar response that completes this very
+        # future — on this same thread while this coroutine is suspended.
+        await future
 
         if not future.done() or future.result() is None:
             self.get_logger().error(f'Scan request at center={center_deg}° timed out')
@@ -433,9 +425,9 @@ class SonarLocalizationNode(Node):
         points: List[Tuple[float, float]] = []
 
         for i, laser_echo in enumerate(scan_msg.ranges):
-            if not laser_echo.ranges:
+            if not laser_echo.echoes:
                 continue
-            distance = laser_echo.ranges[0]
+            distance = laser_echo.echoes[0]
             if not (0.1 < distance < self.sonar_max_range):
                 continue
 
@@ -692,11 +684,10 @@ def main(args=None):
     rclpy.init(args=args)
     node = SonarLocalizationNode()
 
-    # MultiThreadedExecutor is required to allow the localization service
-    # callback to call the sonar scan service without deadlocking:
-    #   outer spin() → service callback → call_async → needs spin() to complete
-    # With MTE + ReentrantCallbackGroup both callbacks can run concurrently.
-    executor = MultiThreadedExecutor()
+    # SingleThreadedExecutor is sufficient: sonar_position_callback is an
+    # async coroutine, so awaiting the sonar scan response suspends it and
+    # lets this same thread process the response instead of blocking on it.
+    executor = SingleThreadedExecutor()
     executor.add_node(node)
 
     try:
