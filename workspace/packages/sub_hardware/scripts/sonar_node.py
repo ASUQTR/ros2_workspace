@@ -13,14 +13,31 @@ from typing import cast
 from sub_interfaces.srv import SonarScan
 
 # ----------------------------
-# Sonar hardware constants
+# Sonar hardware constants (BlueRobotics Ping360)
 # ----------------------------
-# SAMPLE_PERIOD: duration of each sample window, in units of 25 ns.
-# 1200 × 25 ns = 30 µs per sample.
-SAMPLE_PERIOD = 1200
+# The Ping360 always returns a FIXED number of samples per ping. Range is not
+# set by changing that count; it is set by stretching the time between samples
+# (sample_period) so the fixed sample window spans the desired round trip, and
+# then matching the transmit pulse length (transmit_duration) to that range.
+# This mirrors BlueRobotics ping-viewer, which keeps the sample count fixed and
+# varies sample_period + transmit_duration.
 
-TRANSMIT_DURATION = 20
+# Duration of one sample_period tick, in seconds (Ping360 firmware unit).
+SAMPLE_PERIOD_TICK_DURATION = 25e-9
+
+# Firmware transmit-duration limits, in microseconds.
+FIRMWARE_MIN_TRANSMIT_DURATION = 5
+FIRMWARE_MAX_TRANSMIT_DURATION = 500
+
+# Firmware minimum sample_period, in 25 ns ticks (2 µs).
+FIRMWARE_MIN_SAMPLE_PERIOD = 80
+
+# Fixed number of samples per ping. Higher = finer range bins
+# (range resolution = desired_range / NUMBER_OF_SAMPLES). 1200 is the max.
+NUMBER_OF_SAMPLES = 1200
+
 GAIN_SETTING = 1
+TRANSMIT_FREQUENCY = 750  # kHz
 
 SPEED_OF_SOUND = 1480.0  # m/s
 
@@ -56,9 +73,10 @@ class SonarNode(Node):
             )
             self.device._mode = 1
             self.device._gain_setting = GAIN_SETTING
-            self.device._transmit_duration = TRANSMIT_DURATION
-            self.device._sample_period = SAMPLE_PERIOD
-            self.device._transmit_frequency = 750
+            self.device._transmit_frequency = TRANSMIT_FREQUENCY
+            self.device._number_of_samples = NUMBER_OF_SAMPLES
+            # sample_period and transmit_duration are derived from the requested
+            # range in scan(), so there is no meaningful default to seed here.
 
         self.scan_service = self.create_service(
             SonarScan,
@@ -70,16 +88,46 @@ class SonarNode(Node):
     # Range / sample conversion helpers
     # ------------------------------------------------------------------
 
-    def calculate_samples(self, range_m: int) -> int:
-        """Return number of samples required to cover range_m meters.
+    def compute_sample_period(self, range_m: float) -> int:
+        """Sample interval (in 25 ns ticks) so NUMBER_OF_SAMPLES span range_m.
 
-        The round-trip travel time for an echo at distance r is 2r/c.
-        Dividing by the sample window (SAMPLE_PERIOD × 25 ns) gives the
-        sample count.  Capped at 1200 (Ping360 hardware maximum).
+        The round trip to a target at range_m and back takes 2·range_m/c
+        seconds. Spreading that time evenly across the fixed NUMBER_OF_SAMPLES
+        gives the per-sample interval; dividing by the 25 ns tick converts to
+        firmware units. Clamped to the firmware minimum.
         """
-        time_for_echo = (2 * range_m) / self.config_speed_of_sound  # seconds
-        num_samples = int(time_for_echo * 1e6 / SAMPLE_PERIOD)       # µs / (µs per sample)
-        return min(num_samples, 1200)
+        sample_period = int(
+            2 * range_m
+            / (NUMBER_OF_SAMPLES * self.config_speed_of_sound * SAMPLE_PERIOD_TICK_DURATION)
+        )
+        return max(FIRMWARE_MIN_SAMPLE_PERIOD, sample_period)
+
+    def transmit_duration_max(self, sample_period: int) -> int:
+        """Firmware upper bound on transmit_duration (µs) for a sample_period.
+
+        The firmware limits the pulse to whichever is smaller: 500 µs, or
+        64e6 × (sample_period in seconds).
+        """
+        return min(
+            FIRMWARE_MAX_TRANSMIT_DURATION,
+            int(sample_period * SAMPLE_PERIOD_TICK_DURATION * 64e6),
+        )
+
+    def adjust_transmit_duration(self, range_m: float, sample_period: int) -> int:
+        """Transmit pulse length (µs) for a range, per BlueRobotics firmware.
+
+        1. Base pulse: 8000 × one-way range / speed_of_sound.
+        2. Widen to at least 2.5 × the sample interval (µs) so the pulse spans
+           several samples.
+        3. Clamp to [firmware min, firmware max-for-this-sample-period].
+        """
+        transmit_duration = round(8000.0 * range_m / self.config_speed_of_sound)
+        sample_period_us = sample_period * SAMPLE_PERIOD_TICK_DURATION * 1e6
+        transmit_duration = max(2.5 * sample_period_us, transmit_duration)
+        return int(max(
+            FIRMWARE_MIN_TRANSMIT_DURATION,
+            min(self.transmit_duration_max(sample_period), transmit_duration),
+        ))
 
     def sample_to_distance(self, sample_index: int, sample_period: int) -> float:
         """Convert a sample index to distance in meters.
@@ -107,7 +155,7 @@ class SonarNode(Node):
         """
         samples = np.frombuffer(raw_data, dtype=np.uint8).copy()
 
-        ringdown_samples = 250
+        ringdown_samples = 50
         samples[:ringdown_samples] = 0
 
         tail = samples[ringdown_samples:] if len(samples) > ringdown_samples else samples
@@ -153,8 +201,24 @@ class SonarNode(Node):
         stop_deg = int(request.stop_angle)
         range_m = int(request.desired_range)
 
-        num_samples = self.calculate_samples(range_m)
-        self.device._number_of_samples = num_samples
+        # Set the range by stretching the sample period over a FIXED number of
+        # samples, then match the transmit pulse to that range (BlueRobotics
+        # ping-viewer approach). sample_period is needed later to convert a
+        # sample index back into a distance, so keep it in a local.
+        sample_period = self.compute_sample_period(range_m)
+        transmit_duration = self.adjust_transmit_duration(range_m, sample_period)
+
+        self.device._number_of_samples = NUMBER_OF_SAMPLES
+        self.device._sample_period = sample_period
+        self.device._transmit_duration = transmit_duration
+        self.device._gain_setting = GAIN_SETTING
+        self.device._transmit_frequency = TRANSMIT_FREQUENCY
+
+        self.get_logger().info(
+            f'Scan range={range_m} m -> sample_period={sample_period} ticks, '
+            f'transmit_duration={transmit_duration} us, '
+            f'samples={NUMBER_OF_SAMPLES}'
+        )
 
         # Build the ordered list of integer degree values to scan.
         # If start <= stop: straightforward [start, ..., stop]
@@ -193,33 +257,47 @@ class SonarNode(Node):
             # Ping360 uses gradians (400 per full revolution).
             # Convert from degrees: grads = degrees × 400 / 360
             angle_grads = int(angle_deg * 400 / 360)
-            msg = self.device.transmitAngle(angle_grads)
+            msg = None
+            ctr = 0
+            CIRCUIT_BREAKER = 400
 
-            if msg is None:
-                self.get_logger().error(f'transmitAngle failed at {angle_deg}°')
-                ranges.append(LaserEcho(echoes=[0.0]))
-                intensities.append(LaserEcho(echoes=[0.0]))
-                continue
+            while(msg is None):
+                if (ctr >= CIRCUIT_BREAKER):
+                    response.data = None
+                    self.get_logger().error(f'transmitAngle failed at {angle_deg}°')
+                    return
 
-            idx, strength = self.estimate_wall_distance(msg.msg_data)
-            distance = self.sample_to_distance(idx, SAMPLE_PERIOD)
+                msg = self.device.transmitAngle(angle_grads)
+                self.get_logger().debug(f"Retry {ctr} ({angle_deg})")
 
-            # BUG FIX: MultiEchoLaserScan.intensities expects LaserEcho[], not float[].
-            ranges.append(LaserEcho(echoes=[distance]))
-            intensities.append(LaserEcho(echoes=[float(strength)]))
+                if msg is not None:
+                    # msg.data is the echo amplitude array (return strengths).
+                    # NOT msg.msg_data, which is the full serialized wire frame
+                    # (header + payload + checksum) and contains no usable echoes.
+                    idx, strength = self.estimate_wall_distance(msg.data)
+                    # Use the sample_period actually configured for this scan,
+                    # not a fixed constant — distance-per-sample scales with it.
+                    distance = self.sample_to_distance(idx, sample_period)
+        
+                    # BUG FIX: MultiEchoLaserScan.intensities expects LaserEcho[], not float[].
+                    ranges.append(LaserEcho(echoes=[distance]))
+                    intensities.append(LaserEcho(echoes=[float(strength)]))
 
-            # Rate limiter: 10 Hz = 100 ms between pings, matching the
-            # Ping360's transmit/receive cycle. Plain sleep (not rclpy Rate):
-            # this callback runs inside the node's own executor thread, and
-            # an rclpy Rate needs that same executor to spin to wake it up —
-            # calling rate.sleep() here deadlocks forever.
-            time.sleep(0.1)
+                ctr = ctr + 1
+
+                # Rate limiter: 10 Hz = 100 ms between pings, matching the
+                # Ping360's transmit/receive cycle. Plain sleep (not rclpy Rate):
+                # this callback runs inside the node's own executor thread, and
+                # an rclpy Rate needs that same executor to spin to wake it up —
+                # calling rate.sleep() here deadlocks forever.
+                time.sleep(0.1)
 
         scan_msg.ranges = ranges
         scan_msg.intensities = intensities
         response.data = scan_msg
-        return response
 
+        self.get_logger().info(f"{response.data}")
+        return response
 
 def main(args=None):
     rclpy.init(args=args)

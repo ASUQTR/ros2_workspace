@@ -42,6 +42,6 @@ sonar_node:
     # Serial port for the Ping360 (update per platform: ttyUSB0 desktop, ttyTHS1 Jetson)
     port: "/dev/ttyUSB0"
     # Ping360 default baud rate
-    baudrate: 2000000
+    baudrate: 115200
 
     

@@ -34,6 +34,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import Header
@@ -126,16 +127,27 @@ class SonarLocalizationNode(Node):
         # ---- ROS interfaces ----
         # sonar_position_callback (below) is an async service callback: it
         # awaits the sonar scan service's response instead of blocking on it.
-        # rclpy's executors (including SingleThreadedExecutor) suspend a
-        # coroutine callback at each `await` and use the same thread to
-        # process other ready work — such as the awaited response — so no
-        # ReentrantCallbackGroup / MultiThreadedExecutor is needed here.
-        self.sonar_client = self.create_client(SonarScan, '/sonar/scan')
+        # Suspending at `await` only lets the executor make progress on OTHER
+        # callback groups while this coroutine is parked — callbacks in the
+        # SAME group are still serialized. If the client shared the service's
+        # (default) callback group, the group would stay marked "active" for
+        # the coroutine's entire lifetime, so the client's own response-ready
+        # callback could never run and the future would never resolve: a
+        # self-deadlock. Two distinct MutuallyExclusiveCallbackGroups (still
+        # fine under a single SingleThreadedExecutor) avoid that.
+        self._sonar_client_cb_group = MutuallyExclusiveCallbackGroup()
+        self.sonar_client = self.create_client(
+            SonarScan,
+            '/sonar/scan',
+            callback_group=self._sonar_client_cb_group,
+        )
 
+        self._localization_service_cb_group = MutuallyExclusiveCallbackGroup()
         self.localization_service = self.create_service(
             GetSonarPosition,
             'get_sonar_position',
             self.sonar_position_callback,
+            callback_group=self._localization_service_cb_group,
         )
 
         self.get_logger().info(
