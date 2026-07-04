@@ -1,5 +1,9 @@
 #!/bin/bash
-ENV_FILE="$(pwd)/env/desktop"
+set -e
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+REPO_ROOT="$SCRIPT_DIR"
+ENV_FILE="$REPO_ROOT/env/desktop"
 
 # Device list
 IMU_DEVICE="/dev/ttyUSB0"
@@ -7,7 +11,7 @@ IMU_CONNECTED="--device=$IMU_DEVICE"
 
 if ! docker images --format json | grep -q "ros2-humble"; then
   echo -e "[\033[0;31m ERROR \033[0m] Missing docker image.."
-  bash $ENV_FILE/setup.sh
+  bash "$ENV_FILE/setup.sh"
 fi
 
 # Check if the device is available
@@ -21,6 +25,6 @@ docker run -it --rm \
   $IMU_CONNECTED \
   --group-add dialout \
   --net=host \
-  -v $(pwd)/workspace:/workspace \
+  -v "$REPO_ROOT/workspace:/workspace" \
   --name ros2-desktop \
   ros2-humble

@@ -1,0 +1,138 @@
+launch:
+  # Pool integration launch:
+  # - Pete's no-magnetometer EKF yaw configuration.
+  # - MANUAL_ASSISTED control mode.
+  # - Playback/record node.
+  # - Camera dashboard server.
+  #
+  # This launch keeps the sensor-fusion stack explicit while reusing the same
+  # node list as sub.launch.yaml, so it behaves like the current real-sub stack.
+  - arg:
+      name: "urdf_file"
+      default: "$(find-pkg-share sub_launch)/urdf/asuqtr_sub.urdf"
+  - arg:
+      name: "ekf_config_file"
+      default: "$(find-pkg-share sub_control)/config/EKF_no_mag_yaw.yaml"
+  - arg:
+      name: "control_mode"
+      default: "manual_assisted"
+  - arg:
+      name: "camera_1"
+      default: "0"
+  - arg:
+      name: "camera_2"
+      default: "4"
+  - arg:
+      name: "dashboard_port"
+      default: "6969"
+  - arg:
+      name: "save_video"
+      default: "false"
+  - arg:
+      name: "output"
+      default: "/workspace/output/manual_assisted"
+  - arg:
+      name: "label"
+      default: "nomag-pool-test"
+
+  # Control
+  - node:
+      pkg: "sub_control"
+      exec: "control_node.py"
+      name: "control_node"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share sub_control)/config/params.yaml"
+        - name: "control_mode"
+          value: "$(var control_mode)"
+        - name: "manual_assisted.forward_axis_sign"
+          value: 1.0
+
+  # TF tree
+  - node:
+      pkg: "robot_state_publisher"
+      exec: "robot_state_publisher"
+      name: "robot_state_publisher"
+      output: "screen"
+      param:
+        - name: "robot_description"
+          value: "$(command 'cat $(var urdf_file)')"
+
+  # Sensor fusion: no absolute magnetometer yaw, DVL + depth + IMU rates.
+  - node:
+      pkg: "robot_localization"
+      exec: "ekf_node"
+      name: "ekf_filter_node"
+      output: "screen"
+      param:
+        - from: "$(var ekf_config_file)"
+
+  # Physical IMU driver. The no-mag EKF still needs /vectornav/imu for
+  # roll/pitch and angular rates; Unity publishes this topic itself.
+  - node:
+      pkg: "vectornav"
+      exec: "vectornav"
+      name: "vectornav"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share vectornav)/config/vectornav.yaml"
+
+  # Hardware
+  - node:
+      pkg: "sub_hardware"
+      exec: "actuator_node.py"
+      name: "actuator_node"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
+
+  - node:
+      pkg: "sub_hardware"
+      exec: "sensor_node.py"
+      name: "sensor_node"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
+
+  - node:
+      pkg: "sub_hardware"
+      exec: "gpio_node.py"
+      name: "gpio_node"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
+
+  - node:
+      pkg: "sub_hardware"
+      exec: "dvl_node.py"
+      name: "dvl_node"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
+
+  # ROSBridge for the browser dashboard.
+  - node:
+      pkg: "rosbridge_server"
+      exec: "rosbridge_websocket"
+      name: "rosbridge_websocket"
+      output: "screen"
+      param:
+        - name: "port"
+          value: 9090
+
+  # Record/playback.
+  - node:
+      pkg: "sub_playback"
+      exec: "playback_node.py"
+      name: "playback_node"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share sub_playback)/config/params.yaml"
+
+  # Browser dashboard + physical camera streams.
+  - node:
+      pkg: "sub_hardware"
+      exec: "camera_dashboard_server.py"
+      name: "camera_dashboard_server"
+      output: "screen"
+      args: "--camera-1 $(var camera_1) --camera-2 $(var camera_2) --port $(var dashboard_port) --save-video $(var save_video) --output $(var output) --label $(var label)"

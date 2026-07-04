@@ -83,45 +83,107 @@ class T200Thruster(ContinuousServo):
     rather than absolute position.
     
     Data Source:
-        Performance data derived from the official Blue Robotics T200 Performance Charts 
-        at 16V (typical for 4S LiPo setups). 
+        Performance data derived from the official Blue Robotics T200 Performance Charts.
         Reference: https://bluerobotics.com/store/thrusters/t100-t200-thrusters/t200-thruster/
+
+    Voltage Estimation (15.5V table):
+        A 4S LiPo starts at ~16.8V (full charge) and ends near ~14V (depleted). During a
+        typical competition mission, the operating voltage sits around 15-16V, with most
+        of the run near 15.5V. Rather than using either the raw 14V or 16V dataset alone,
+        this table was pre-computed by linearly interpolating between both at 15.5V:
+
+            t = (15.5 - 14.0) / (16.0 - 14.0) = 0.75
+            force_15.5V = force_14V + t * (force_16V - force_14V)
+
+        This minimizes the Newton-to-PWM mapping error at the most common operating point.
+        Example at 1600µs: 14V table = 4.91N, 16V table = 5.89N, this table = 5.65N.
+        If the battery is at exactly 15.5V, the interpolated value is correct by construction
+        (assuming thrust scales linearly with voltage between 14V and 16V, which holds well
+        for brushless motors). Error grows as voltage deviates from 15.5V during the run.
+
+    Future Improvements:
+        1. Voltage-adaptive mapping:
+           Replace this static 15.5V table with a runtime interpolation driven by the
+           actual battery voltage read from a BMS or voltage sensor on a /battery_voltage
+           ROS topic. Both the 14V and 16V datasets are available in the Blue Robotics
+           performance charts and can be stored as two static arrays, interpolated at
+           runtime using: t = (V - 14.0) / (16.0 - 14.0); force = f14 + t * (f16 - f14).
+
+        2. Per-motor throttle offsets:
+           The current thruster_throttle_offset parameter applies one global offset to all
+           8 thrusters. In practice, each ESC can have a slightly different neutral point,
+           causing some motors to spin at a commanded force of 0N. This should be replaced
+           by a per-motor list (e.g. thruster_throttle_offsets: [0.0, 0.0, ..., 0.0] in
+           params.yaml) applied individually to each thruster before sending PWM commands.
+           Calibration procedure: spin each motor alone at a very low command, observe
+           drift, and correct with its individual offset.
+
+        3. ESC PWM range calibration:
+           The Blue Robotics Basic ESC supports a one-time PWM range calibration that
+           ensures all ESCs interpret 1100-1900µs identically and centers the deadband
+           at 1500µs. This must be done in hardware (requires power-cycling the ESC with
+           the signal held at max before power-on). Steps:
+             a. Cut ESC power.
+             b. Hold PWM signal at 1900µs.
+             c. Power on ESC — wait for the tone sequence.
+             d. Move signal to 1100µs — ESC saves the range permanently.
+           This should be done once per ESC after any hardware change, before relying on
+           the per-motor offset calibration in improvement #2.
     """
     MIN_PULSE = 1100
     MAX_PULSE = 1900
 
-    # T200 Thruster Performance Data (16V approximation)
-    # Measured thrust in Newtons. 
-    # Note: Array must be in monotonically increasing order for np.interp to function.
+    # T200 performance at 15.5V — interpolated from 14V and 16V datasets (t=0.75).
+    # Forces in Newtons. Deadband: 1468µs to 1532µs (ESC produces no thrust in this range).
+    # Array must be monotonically increasing for np.interp to function correctly.
     known_forces_n = np.array([
-            -40.22, # Max Reverse (Asymmetric, weaker than forward)
-            -27.47, 
-            -14.71, 
-            -5.89, 
-            0.0,    # Deadband start
-            0.0,    # Center/Stopped
-            0.0,    # Deadband end
-            7.85, 
-            19.62, 
-            34.33, 
-            51.50   # Max Forward
+            -38.58,  # 1100 us — Max Reverse
+            -32.30,  # 1150 us
+            -25.71,  # 1200 us
+            -18.83,  # 1250 us
+            -13.63,  # 1300 us
+             -8.49,  # 1350 us
+             -4.51,  # 1400 us
+             -1.11,  # 1450 us
+             -0.40,  # 1464 us — last non-zero before deadband
+              0.0,   # 1468 us — deadband lower boundary
+              0.0,   # 1500 us — center / stopped
+              0.0,   # 1532 us — deadband upper boundary
+              0.42,  # 1536 us — first non-zero after deadband
+              1.13,  # 1548 us
+              5.65,  # 1600 us
+             10.88,  # 1650 us
+             17.19,  # 1700 us
+             24.38,  # 1750 us
+             32.50,  # 1800 us
+             41.56,  # 1850 us
+             49.71,  # 1900 us — Max Forward
         ])
 
     # Corresponding ContinuousServo API commands [-1.0 to 1.0]
-    # These represent the exact PWM values (from 1100us to 1900us) required to generate 
-    # the corresponding force in the known_forces_n array.
+    # api_cmd = (PWM_us - 1500) / 400
     known_api_cmds = np.array([
-            -1.0,    # 1100 us
-            -0.75,   # 1200 us
-            -0.50,   # 1300 us
-            -0.25,   # 1400 us
-            -0.0625, # 1475 us (Deadband boundary - lower)
-            0.0,     # 1500 us (Stopped)
-            0.0625,  # 1525 us (Deadband boundary - upper)
-            0.25,    # 1600 us
-            0.50,    # 1700 us
-            0.75,    # 1800 us
-            1.0      # 1900 us
+            -1.000,  # 1100 us
+            -0.875,  # 1150 us
+            -0.750,  # 1200 us
+            -0.625,  # 1250 us
+            -0.500,  # 1300 us
+            -0.375,  # 1350 us
+            -0.250,  # 1400 us
+            -0.125,  # 1450 us
+            -0.090,  # 1464 us
+            -0.080,  # 1468 us — deadband lower
+             0.000,  # 1500 us — stopped
+             0.080,  # 1532 us — deadband upper
+             0.090,  # 1536 us
+             0.120,  # 1548 us
+             0.250,  # 1600 us
+             0.375,  # 1650 us
+             0.500,  # 1700 us
+             0.625,  # 1750 us
+             0.750,  # 1800 us
+             0.875,  # 1850 us
+             1.000,  # 1900 us
         ])
 
     def __init__(self, pwm_out):
@@ -177,6 +239,7 @@ class ActuatorNode(Node):
         self.declare_parameter('flat_thruster_gain_primary', 0.2)
         self.declare_parameter('flat_thruster_gain_secondary', 0.1)
         self.declare_parameter('enable_thrusters_watchdog', True)
+        self.declare_parameter('thrusters_watchdog_timeout_sec', 0.5)
 
         pca_ref_clk_speed = self.get_parameter('pca_ref_clk_speed').value
         self.thruster_throttle_offset = self.get_parameter('thruster_throttle_offset').value
@@ -184,6 +247,9 @@ class ActuatorNode(Node):
         self.flat_thruster_gain_primary = float(self.get_parameter('flat_thruster_gain_primary').value)
         self.flat_thruster_gain_secondary = float(self.get_parameter('flat_thruster_gain_secondary').value)
         self.thrusters_watchdog_enabled = self.get_parameter('enable_thrusters_watchdog').value
+        self.thrusters_watchdog_timeout = Duration(
+            seconds=float(self.get_parameter('thrusters_watchdog_timeout_sec').value)
+        )
 
         # Bind dynamic ROS2 reconfigure callback to allow live tuning
         self.add_on_set_parameters_callback(self.parameter_callback)
@@ -245,10 +311,9 @@ class ActuatorNode(Node):
             Bool, 'kill_switch', self.kill_switch_callback, latched_qos, callback_group=self.i2c_cb_group)
 
         # --- Thruster Watchdog Timer for safety---
-        # Set a timout of 1 sec for thruster commands. If timed out, kill thrusters.
+        # If thruster commands stop arriving, force all thrusters to neutral.
         # Since this callback can operate thrusters, i needs to be in the i2c mutex callback group
         # Set it using seconds for human readability
-        self.thrusters_watchdog_timeout = Duration(seconds=1.0)        
         self.last_watchdog_kick_time = self.get_clock().now()
         self.thrusters_watchdog_timer = self.create_timer(
             0.05, # Check for thruster cmd timout at 20hz frequency
@@ -294,6 +359,19 @@ class ActuatorNode(Node):
                 else:
                     successful = False
                     reason = "Type rejected: use_flat_thruster_mapping must be a bool"
+            elif param.name == 'thrusters_watchdog_timeout_sec':
+                if param.type_ == Parameter.Type.DOUBLE:
+                    if 0.1 <= param.value <= 5.0:
+                        self.thrusters_watchdog_timeout = Duration(seconds=float(param.value))
+                        self.get_logger().info(
+                            f"Thruster watchdog timeout set to: {float(param.value):.2f} s"
+                        )
+                    else:
+                        successful = False
+                        reason = "Timeout rejected: thrusters_watchdog_timeout_sec must be between 0.1 and 5.0"
+                else:
+                    successful = False
+                    reason = "Type rejected: thrusters_watchdog_timeout_sec must be a float (double)"
             elif param.name == 'flat_thruster_gain_primary':
                 if param.type_ == Parameter.Type.DOUBLE:
                     if 0.0 <= param.value <= 1.0:
@@ -364,7 +442,7 @@ class ActuatorNode(Node):
         if self.thrusters_need_init:
             return
         
-        efforts = np.asarray(msg.efforts, dtype=np.float64)
+        efforts = np.clip(np.asarray(msg.efforts, dtype=np.float64), -14.4, 14.4)
 
         if self.use_flat_thruster_mapping:
             # Temporary debug mode: ignore the non-linear curve and use a flat gain.
@@ -477,6 +555,8 @@ def main(args=None):
     except KeyboardInterrupt:
         node.get_logger().info('Keyboard interrupt detected, shutting down...')
     finally:
+        for thruster in node.thrusters:
+            thruster.throttle = 0.0
         executor.shutdown()
         node.destroy_node()
         rclpy.try_shutdown()

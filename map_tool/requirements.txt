@@ -1,0 +1,16 @@
+# --- Runtime ---
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+websockets==12.0
+python-multipart==0.0.6        # required by FastAPI for file uploads
+python-dotenv==1.0.0           # optional .env loading
+
+# rosbag2 playback (Option A) requires ROS 2 Humble libraries at runtime.
+# These are NOT installed via pip — install the apt package and source ROS:
+#     sudo apt install ros-humble-rosbag2-py
+#     source /opt/ros/humble/setup.bash
+# Live mode and the rest of the backend run without them.
+
+# --- Dev / tests ---
+pytest==7.4.3
+httpx==0.25.1                  # FastAPI TestClient dependency

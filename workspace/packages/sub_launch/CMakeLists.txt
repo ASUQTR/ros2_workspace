@@ -12,6 +12,7 @@ install(DIRECTORY
   urdf
   #rviz add later if rviz setup added
   DESTINATION share/${PROJECT_NAME}
+  PATTERN "__pycache__" EXCLUDE
 )
 
 # 3. Finalize the package
