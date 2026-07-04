@@ -9,10 +9,10 @@ import math
 # ==============================================================================
 THRUST_ALLOC_MAT = np.array([[-1, 1, 0, 0, 0, 1],
                              [-1, -1, 0, 0, 0, -1],
-                             [0, 0, -1, -1, -1, 0],
-                             [0, 0, -1, 1, -1, 0],
-                             [0, 0, -1, -1, 1, 0],
-                             [0, 0, -1, 1, 1, 0],
+                             [0, 0, 1, 1, 1, 0],
+                             [0, 0, 1, -1, 1, 0],
+                             [0, 0, 1, 1, -1, 0],
+                             [0, 0, 1, -1, -1, 0],
                              [1, 1, 0, 0, 0, -1],
                              [1, -1, 0, 0, 0, 1]], dtype=np.int8)
 
@@ -38,23 +38,23 @@ Bm[7][6] = 0.01902284924040905501271856144737
 Bm[7][7] = -0.01902284924040905501271856144737
 
 # Heave (w_dot) affected by vertical thrusters
-Bm[8][2] = -0.026906434569178295633265292004767
-Bm[8][3] = -0.026906434569178295633265292004767
-Bm[8][4] = -0.026906434569178295633265292004767
-Bm[8][5] = -0.026906434569178295633265292004767
+Bm[8][2] = 0.026906434569178295633265292004767
+Bm[8][3] = 0.026906434569178295633265292004767
+Bm[8][4] = 0.026906434569178295633265292004767
+Bm[8][5] = 0.026906434569178295633265292004767
 
 # --- Kinetics (Angular Accelerations: p_dot, q_dot, r_dot) ---
 # Roll (p_dot)
-Bm[9][2] = -0.47145328719723183391003460207612
-Bm[9][3] = 0.47145328719723183391003460207612
-Bm[9][4] = -0.47145328719723183391003460207612
-Bm[9][5] = 0.47145328719723183391003460207612
+Bm[9][2] = 0.47145328719723183391003460207612
+Bm[9][3] = -0.47145328719723183391003460207612
+Bm[9][4] = 0.47145328719723183391003460207612
+Bm[9][5] = -0.47145328719723183391003460207612
 
 # Pitch (q_dot)
-Bm[10][2] = -0.16128655774647620680552224586649
-Bm[10][3] = -0.16128655774647620680552224586649
-Bm[10][4] = 0.16128655774647620680552224586649
-Bm[10][5] = 0.16128655774647620680552224586649
+Bm[10][2] = 0.16128655774647620680552224586649
+Bm[10][3] = 0.16128655774647620680552224586649
+Bm[10][4] = -0.16128655774647620680552224586649
+Bm[10][5] = -0.16128655774647620680552224586649
 
 # Yaw (r_dot)
 Bm[11][0] = 0.39463536905835478514559256667363
@@ -63,45 +63,33 @@ Bm[11][6] = -0.39463536905835478514559256667363
 Bm[11][7] = 0.39463536905835478514559256667363
 
 # ==============================================================================
-# UNITY-ALIGNED HYDRODYNAMIC FIT
+# HYDRODYNAMIC FIT USED BY THE A MATRIX
 # ==============================================================================
-# Coefficients are positive magnitudes. `SubLQRSolver.damping_sign` applies the
-# dissipative sign at runtime, and the quadratic terms are SDRE-linearized using
-# the current state magnitude: d(v) = linear + quadratic * abs(v).
+# Coefficients are positive acceleration gains. `SubLQRSolver.damping_sign`
+# applies the dissipative sign at runtime, and quadratic terms can be
+# SDRE-linearized using the current state magnitude.
 #
 # Marine axes used by the LQR: surge u, sway v, heave w, roll p, pitch q, yaw r.
 # Unity mapping in the Hydrodynamics component:
 #   local X = sway, local Y = heave, local Z = surge
 #   angular X = pitch, angular Y = yaw, angular Z = roll
 HYDRO_LINEAR = {
-    "surge": 23.9201,
-    "sway": 43.6523,
-    "heave": 52.9362,
-    "roll": 1.0752,
-    "pitch": 1.4659,
-    "yaw": 1.3090,
+    "surge": 1.5120833567159437,
+    "sway": 3.3300183709417563,
+    "heave": 4.5941633863054605,
+    "roll": 7.266782006920415,
+    "pitch": 9.789778396523998,
+    "yaw": 4.613927230130708,
 }
 
 HYDRO_QUADRATIC = {
-    "surge": 26.7035,
-    "sway": 80.1106,
-    "heave": 117.8097,
-    "roll": 3.1250,
-    "pitch": 5.0470,
-    "yaw": 2.9207,
+    "surge": 0.0,
+    "sway": 0.0,
+    "heave": 0.0,
+    "roll": 0.0,
+    "pitch": 0.0,
+    "yaw": 0.0,
 }
-
-# Effective masses/inertias aligned with the B matrix above. Translational values
-# include the Unity added-mass fit currently used in the simulator.
-EFFECTIVE_MASS = {
-    "surge": 0.7071067811865476 / 0.021117481435499889,
-    "sway": 0.7071067811865476 / 0.019022849240409055,
-    "heave": 1.0 / 0.026906434569178296,
-    "roll": 0.2725 / 0.47145328719723183,
-    "pitch": (1.4659 + 5.0470) / 9.789778396523997,
-    "yaw": (1.3090 + 2.9207) / 4.613927230130708,
-}
-
 
 # ==============================================================================
 # LQR SOLVER CLASS
@@ -441,10 +429,7 @@ class SubLQRSolver:
 
     def _sdre_damping(self, axis: str, velocity: float) -> float:
         """Return state-dependent damping acceleration gain for one DOF."""
-        return (
-            HYDRO_LINEAR[axis]
-            + HYDRO_QUADRATIC[axis] * abs(float(velocity))
-        ) / EFFECTIVE_MASS[axis]
+        return HYDRO_LINEAR[axis] + HYDRO_QUADRATIC[axis] * abs(float(velocity))
 
     def compute_thrust_force(self, state: np.ndarray, state_error: np.ndarray, 
                              q_matrix: np.ndarray, r_matrix: np.ndarray, 

@@ -57,10 +57,9 @@ control_node:
     # Hard software saturation for each thruster command in Newtons.
     max_thruster_force_newton: 14.4
     # Per-thruster force sign applied just before publishing /thruster_cmd.
-    # Use this to align ROS effort signs with the physical/Unity thruster mounting.
-    # Current test hypothesis: all thrusters need inversion to align positive
-    # ROS efforts with the physical T200 thrust direction.
-    thruster_force_signs: [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+    # Keep neutral by default: motor sign conventions live in Bm and
+    # THRUST_ALLOC_MAT so LQR and open-loop use the same actuator model.
+    thruster_force_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 
     # The A matrix stores damping as positive magnitudes; -1.0 makes it dissipative.
     damping_sign: -1.0
