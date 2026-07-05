@@ -66,6 +66,13 @@ launch:
       param:
         - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
 
+  - node:
+      pkg: "vectornav"
+      exec: "vectornav"
+      name: "vectornav"
+      param:
+        - from: "$(find-pkg-share vectornav)/config/vectornav.yaml"
+
   # 3. Start ROSbridge for ASUQTR dashboard interaction
   - node:
       pkg: "rosbridge_server"
