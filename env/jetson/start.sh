@@ -13,5 +13,6 @@ docker run -it --rm \
   --net=host \
   -v /dev:/dev \
   -v $(pwd)/workspace:/workspace \
+  -v /mnt/nvme:/mnt/nvme \
   --name "$CONTAINER_NAME" \
   asuqtr_ros2
