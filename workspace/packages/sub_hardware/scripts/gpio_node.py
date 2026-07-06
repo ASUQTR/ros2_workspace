@@ -24,6 +24,7 @@ This node implements a dual-layer safety system using the Killswitch.
    if the hardware power cut fails or arcs, the software stops commanding the thrusters.
 """
 
+import time
 from Jetson import GPIO
 import rclpy
 from rclpy.node import Node
@@ -190,6 +191,7 @@ class GPIONode(Node):
         True = Disable PWMs (Pull /OE High)
         False = Enable PWMs (Pull /OE Low)
         """
+        self.get_logger().info(f"Received disable_pwm request: {msg.data}")
         GPIO.output(self.disable_pwms_pin, msg.data)
 
 
@@ -268,6 +270,9 @@ def main(args=None):
     except KeyboardInterrupt:
         node.get_logger().info('Keyboard interrupt. Shutting down GPIO node...')
     finally:
+        # Hold /OE HIGH long enough for ESCs to stop before GPIO.cleanup() releases the pin.
+        GPIO.output(node.disable_pwms_pin, True)
+        time.sleep(2.5)
         # Cleanup is crucial in embedded systems to release the GPIO pins safely
         node.destroy_node()
         GPIO.cleanup()
