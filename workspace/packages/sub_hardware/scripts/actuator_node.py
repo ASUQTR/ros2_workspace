@@ -30,6 +30,7 @@ ROS 2 Interface:
 # ==========================================
 # PYTHON STANDARD & 3RD PARTY IMPORTS
 # ==========================================
+import time
 import numpy as np
 from adafruit_pca9685 import PCA9685
 from adafruit_motor.servo import ContinuousServo, Servo
@@ -310,6 +311,8 @@ class ActuatorNode(Node):
         self.kill_switch_sub = self.create_subscription(
             Bool, 'kill_switch', self.kill_switch_callback, latched_qos, callback_group=self.i2c_cb_group)
 
+        self.disable_pwm_pub = self.create_publisher(Bool, 'disable_pwm', latched_qos)
+
         # --- Thruster Watchdog Timer for safety---
         # If thruster commands stop arriving, force all thrusters to neutral.
         # Since this callback can operate thrusters, i needs to be in the i2c mutex callback group
@@ -516,6 +519,10 @@ class ActuatorNode(Node):
     # HELPER FUNCTIONS
     # ==========================================
 
+    def assert_pwm_disable(self):
+        """Requests gpio_node to gate PWM off at the PCA9685 /OE pin."""
+        self.disable_pwm_pub.publish(Bool(data=True))
+
     def trigger_thrusters_init(self):
         """
         Forces thrusters to neutral (0-PWM) and enforces a 1-second software lockout.
@@ -555,9 +562,18 @@ def main(args=None):
     except KeyboardInterrupt:
         node.get_logger().info('Keyboard interrupt detected, shutting down...')
     finally:
+        # Join worker threads before zeroing thrusters, so a stale in-flight callback
+        # can't write a nonzero throttle after we do.
+        executor.shutdown()
+
+        try:
+            node.assert_pwm_disable()
+            time.sleep(0.2)
+        except Exception as e:
+            print(f"actuator_node: disable_pwm publish failed during shutdown: {e}")
+
         for thruster in node.thrusters:
             thruster.throttle = 0.0
-        executor.shutdown()
         node.destroy_node()
         rclpy.try_shutdown()
 
