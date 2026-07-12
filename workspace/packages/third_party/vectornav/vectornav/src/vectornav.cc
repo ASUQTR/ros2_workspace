@@ -906,9 +906,9 @@ imu_msg.angular_velocity_covariance = {
 
 // Linear Acceleration (Uniform across all axes)
 imu_msg.linear_acceleration_covariance = {
-    0.36, 0.0, 0.0,
-    0.0, 0.36, 0.0,
-    0.0, 0.0, 0.36
+   4.60e-4, 0.0, 0.0,
+    0.0, 4.88e-4, 0.0,
+    0.0, 0.0, 4.07e-4
 };
   // Publish
   node->imu_pub_->publish(imu_msg);
