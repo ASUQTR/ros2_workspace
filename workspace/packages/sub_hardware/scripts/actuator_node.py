@@ -326,7 +326,11 @@ class ActuatorNode(Node):
 
         # --- Initialization State ---
         self.thrusters_need_init = False
-        self.init_timer = None        
+        # Latches True the first time the killswitch is pulled. Once tripped, thrusters are
+        # permanently locked out for the rest of this process's life -- reinserting the killswitch
+        # will NOT re-arm them. The node must be restarted to resume thruster operation.
+        self.kill_switch_tripped = False
+        self.init_timer = None
         self.trigger_thrusters_init()
         
 
@@ -441,8 +445,9 @@ class ActuatorNode(Node):
         # even if the thruster are in initialization sequence, to avoid the watchdog trying to
         # send a new command to the thrusters
         self.last_watchdog_kick_time = self.get_clock().now()
-        # Drop incoming commands if the ESCs are undergoing their boot/arming sequence
-        if self.thrusters_need_init:
+        # Drop incoming commands if the ESCs are undergoing their boot/arming sequence,
+        # or permanently once the killswitch has ever been tripped this session
+        if self.thrusters_need_init or self.kill_switch_tripped:
             return
         
         efforts = np.clip(np.asarray(msg.efforts, dtype=np.float64), -14.4, 14.4)
@@ -488,9 +493,34 @@ class ActuatorNode(Node):
 
     def kill_switch_callback(self, msg):
         """
-        Triggers a safety lockout and re-arms the ESCs when a "killswitch latched" command is received.
+        Permanently latches thrusters off the first time the killswitch is pulled, and re-arms
+        the ESCs on insertion only if the killswitch has never been pulled this session.
+
+        Once tripped, reinserting the killswitch will NOT resume thruster operation -- the node
+        must be restarted. This guarantees a pulled killswitch can never be undone by someone
+        (or something) simply putting the magnet back.
         """
-        if msg.data and not self.thrusters_need_init:
+        if not msg.data:
+            if not self.kill_switch_tripped:
+                self.kill_switch_tripped = True
+                self.get_logger().error(
+                    "Killswitch PULLED! Thrusters permanently disabled for the remainder of this "
+                    "process. Restart actuator_node to re-arm."
+                )
+                # Defense in depth alongside gpio_node's hardware /OE cutoff: force neutral now too.
+                for thruster in self.thrusters:
+                    thruster.throttle = 0.0
+            return
+
+        if self.kill_switch_tripped:
+            self.get_logger().warn(
+                "Killswitch reinserted, but thrusters remain locked out after a prior kill event. "
+                "Restart actuator_node to re-arm.",
+                throttle_duration_sec=5.0
+            )
+            return
+
+        if not self.thrusters_need_init:
             self.thrusters_need_init = True         # Lock out incoming commands in the thrusters_callback
             self.trigger_thrusters_init()
 
