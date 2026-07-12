@@ -37,6 +37,14 @@ launch:
       param:
         - from: "$(var ekf_config_file)"
 
+  # Physical IMU driver
+  - node:
+      pkg: "vectornav"
+      exec: "vectornav"
+      name: "vectornav"
+      param:
+        - from: "$(find-pkg-share vectornav)/config/vectornav.yaml"
+
   # 2. Sub Hardware (Actuators & Sensors)
   - node:
       pkg: "sub_hardware"

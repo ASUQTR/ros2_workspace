@@ -4,7 +4,7 @@ ekf_filter_node:
     # Core Node Settings
     # -----------------------------------------------------------
     frequency: 25.0
-    sensor_timeout: 0.00
+    sensor_timeout: 0.2
     two_d_mode: false
     transform_time_offset: 0.0
     transform_timeout: 0.0
@@ -27,10 +27,6 @@ ekf_filter_node:
     # inside the hull. Gyro rates (vroll, vpitch, vyaw) are MEMS-based and
     # unaffected by magnetic interference so they remain enabled.
     # -----------------------------------------------------------
-    # NOTE: unlike the other EKF configs, this one names the replay-only
-    # covariance-override output directly (see tools/override_imu_covariance.py)
-    # instead of relying on replay.launch.yaml's remap. It is not currently
-    # wired into pool.launch.yaml; revert to "vectornav/imu" before doing so.
     imu0: vectornav/imu
 
     # [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
@@ -69,8 +65,6 @@ ekf_filter_node:
     # -----------------------------------------------------------
     # Sensor 2: Doppler Velocity Log (geometry_msgs/msg/TwistWithCovarianceStamped)
     # -----------------------------------------------------------
-    # NOTE: see imu0 above -- same replay-only override-output naming, revert
-    # to "dvl/velocities" before using this file with pool.launch.yaml.
     twist0: dvl/velocities
 
     # [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
