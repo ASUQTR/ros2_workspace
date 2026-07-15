@@ -20,6 +20,7 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/actuator_node.py
   scripts/dvl_node.py
+  scripts/dvl_depth_proxy_node.py
   scripts/sensor_node.py
   scripts/power_node.py
   scripts/gpio_node.py

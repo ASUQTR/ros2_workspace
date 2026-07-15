@@ -1,0 +1,149 @@
+launch:
+  # Pool fallback launch:
+  # - Same stack as robosub.launch.yaml.
+  # - Does NOT start the Bar30 sensor_node.py.
+  # - Publishes /depth from DVL altitude using a known pool depth.
+  #
+  # Use this only when the Bar30/I2C chain is unreliable. The EKF still listens
+  # to /depth, so control_node sees the same odometry interface.
+  - arg:
+      name: "urdf_file"
+      default: "$(find-pkg-share sub_launch)/urdf/asuqtr_sub.urdf"
+  - arg:
+      name: "ekf_config_file"
+      default: "$(find-pkg-share sub_control)/config/EKF_IMU_DVL_Bar30_yaw.yaml"
+  - arg:
+      name: "control_mode"
+      default: "manual_assisted"
+  - arg:
+      name: "pool_depth_m"
+      default: "7.0"
+  - arg:
+      name: "dvl_depth_variance"
+      default: "0.04"
+  - arg:
+      name: "camera_1"
+      default: "0"
+  - arg:
+      name: "camera_2"
+      default: "4"
+  - arg:
+      name: "dashboard_port"
+      default: "6969"
+  - arg:
+      name: "save_video"
+      default: "false"
+  - arg:
+      name: "output"
+      default: "/workspace/output/manual_assisted"
+  - arg:
+      name: "label"
+      default: "dvl-depth-pool-test"
+
+  # Control
+  - node:
+      pkg: "sub_control"
+      exec: "control_node.py"
+      name: "control_node"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share sub_control)/config/params.yaml"
+        - name: "control_mode"
+          value: "$(var control_mode)"
+        - name: "manual_assisted.forward_axis_sign"
+          value: 1.0
+
+  # TF tree
+  - node:
+      pkg: "robot_state_publisher"
+      exec: "robot_state_publisher"
+      name: "robot_state_publisher"
+      output: "screen"
+      param:
+        - name: "robot_description"
+          value: "$(command 'cat $(var urdf_file)')"
+
+  # Sensor fusion: DVL-derived depth keeps the same /depth interface as Bar30.
+  - node:
+      pkg: "robot_localization"
+      exec: "ekf_node"
+      name: "ekf_filter_node"
+      output: "screen"
+      param:
+        - from: "$(var ekf_config_file)"
+
+  # Physical IMU driver.
+  - node:
+      pkg: "vectornav"
+      exec: "vectornav"
+      name: "vectornav"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share vectornav)/config/vectornav.yaml"
+
+  # Hardware
+  - node:
+      pkg: "sub_hardware"
+      exec: "actuator_node.py"
+      name: "actuator_node"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
+
+  # Bar30 intentionally disabled in this fallback launch. The proxy below
+  # publishes nav_msgs/Odometry on /depth instead.
+  - node:
+      pkg: "sub_hardware"
+      exec: "dvl_depth_proxy_node.py"
+      name: "dvl_depth_proxy_node"
+      output: "screen"
+      param:
+        - name: "pool_depth_m"
+          value: "$(var pool_depth_m)"
+        - name: "depth_variance"
+          value: "$(var dvl_depth_variance)"
+        - name: "require_bottom_lock"
+          value: true
+
+  - node:
+      pkg: "sub_hardware"
+      exec: "gpio_node.py"
+      name: "gpio_node"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
+
+  - node:
+      pkg: "sub_hardware"
+      exec: "dvl_node.py"
+      name: "dvl_node"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share sub_hardware)/config/params.yaml"
+
+  # ROSBridge for the browser dashboard.
+  - node:
+      pkg: "rosbridge_server"
+      exec: "rosbridge_websocket"
+      name: "rosbridge_websocket"
+      output: "screen"
+      param:
+        - name: "port"
+          value: 9090
+
+  # Record/playback.
+  - node:
+      pkg: "sub_playback"
+      exec: "playback_node.py"
+      name: "playback_node"
+      output: "screen"
+      param:
+        - from: "$(find-pkg-share sub_playback)/config/params.yaml"
+
+  # Browser dashboard + physical camera streams.
+  - node:
+      pkg: "sub_hardware"
+      exec: "camera_dashboard_server.py"
+      name: "camera_dashboard_server"
+      output: "screen"
+      args: "--camera-1 $(var camera_1) --camera-2 $(var camera_2) --port $(var dashboard_port) --save-video $(var save_video) --output $(var output) --label $(var label)"

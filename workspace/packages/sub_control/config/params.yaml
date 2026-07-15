@@ -19,13 +19,13 @@ control_node:
     lqr_profile_transition_sec: 1.0
     lqr_profiles:
       # Q indices: [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw]
-      # These pool-safe profiles keep R=15 to reduce thruster aggressiveness.
+      # These pool-safe profiles keep R high enough to reduce thruster aggressiveness.
       # R=1 was too nervous in Unity and in pool testing.
 
       # STANDSTILL — baseline real-sub profile.
-      # This is the old matrix that moved slowly but stayed stable and straight.
-      standstill_q: [1052.4762, 578.7808, 670.0731, 3134.6757, 3959.9523, 2453.9726, 265.1124, 303.5306, 204.2912, 12.3207, 19.8116, 12.2442]
-      standstill_r: [15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0]
+      # Starts from the old stable matrix with stronger Z/Vz authority for pool depth hold.
+      standstill_q: [1052.4762, 578.7808, 2000.0, 3134.6757, 3959.9523, 2453.9726, 265.1124, 303.5306, 500.0, 12.3207, 19.8116, 12.2442]
+      standstill_r: [12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0]
 
       # TURNING — conservative yaw maneuver profile.
       # Keeps position/leveling authority while allowing yaw to move without R=1 aggressiveness.
@@ -71,10 +71,10 @@ control_node:
     manual_assisted:
       # LQR target uses NED: positive depth points down. The Bar30/EKF value is
       # negative ENU Z and control_node converts it to positive NED depth.
-      default_depth_target: 0.5
+      default_depth_target: 1.5
       depth_limits_enabled: true
-      min_depth_target: 0.2
-      max_depth_target: 0.5
+      min_depth_target: 1.0
+      max_depth_target: 2.0
       depth_step: 0.1
       max_depth_offset: 0.25
       max_carrot_distance: 0.35
