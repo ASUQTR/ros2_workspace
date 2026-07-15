@@ -20,6 +20,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import TwistWithCovarianceStamped, PoseStamped
 from sensor_msgs.msg import Imu
 from std_msgs.msg import Bool, Float64
+from sub_interfaces.msg import DvlBeam
 
 
 def _euler_to_quaternion(roll_rad: float, pitch_rad: float, yaw_rad: float) -> tuple[float, float, float, float]:
@@ -92,6 +93,8 @@ class DVLNode(Node):
         self.heading_raw_pub = self.create_publisher(Float64, 'dvl/heading_raw', 10)
         self.bottom_lock_pub = self.create_publisher(Bool, 'dvl/bottom_lock', 10)
         self.velocity_rejected_pub = self.create_publisher(Bool, 'dvl/velocity_rejected', 10)
+        self.fom_pub = self.create_publisher(Float64, 'dvl/fom', 10)
+        self.transducer_pub = self.create_publisher(DvlBeam, 'dvl/transducer', 10)
         
         # State variables
         self.invalid_velocity_count = 0
@@ -153,13 +156,15 @@ class DVLNode(Node):
                 self._handle_protocol_version(fields)
             elif header == DVLProtocolHeader.PRODUCT_DETAILS:
                 self._handle_product_details(fields)
+            elif header == DVLProtocolHeader.TRANSDUCER_REPORT:
+                self._handle_transducer_report(fields)
             elif header == DVLProtocolHeader.NAK:
                 self.get_logger().warn('DVL command not acknowledged (NAK)')
             elif header == DVLProtocolHeader.BAD_CHECKSUM:
                 self.get_logger().warn('DVL rejected command: Bad Checksum')
             elif header == DVLProtocolHeader.BAD_REQUEST:
                 self.get_logger().warn('DVL rejected command: Unknown Request')
-            # ACK (wra) and TRANSDUCER_REPORT (wru) are intentionally ignored
+            # ACK (wra) is intentionally ignored
 
         except UnicodeDecodeError:
             self.get_logger().warn("Received non-UTF-8 bytes from DVL.")
@@ -175,16 +180,19 @@ class DVLNode(Node):
         report_is_valid = fields[4]
         self.bottom_lock_pub.publish(Bool(data=report_is_valid == 'y'))
 
-        # Altitude is reported on every 'wrz' line (valid or not), so publish
-        # it unconditionally to keep a continuous trace in the bag.
+        # Altitude and FOM are reported on every 'wrz' line (valid or not), so
+        # publish them unconditionally to keep a continuous trace in the bag.
         ros_time = self.get_clock().now().to_msg()
         altitude = float(fields[5])
+        fom = float(fields[6])
 
         pose_msg = PoseStamped()
         pose_msg.header.stamp = ros_time
         pose_msg.header.frame_id = "dvl_link"
         pose_msg.pose.position.z = altitude
         self.altitude_pub.publish(pose_msg)
+
+        self.fom_pub.publish(Float64(data=fom))
 
         if report_is_valid != 'y':
             self.invalid_velocity_count += 1
@@ -254,6 +262,25 @@ class DVLNode(Node):
                 throttle_duration_sec=1.0
             )
 
+
+    def _handle_transducer_report(self, fields: list[str]):
+        """
+        Parses 'wru' payload: per-beam velocity/distance/rssi/nsd.
+        One line is sent per transducer (id 0-3) for each velocity cycle.
+        distance is -1 if that beam's return could not be decoded.
+        """
+        if len(fields) != 6:
+            return
+
+        msg = DvlBeam()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "dvl_link"
+        msg.id = int(fields[1])
+        msg.velocity = float(fields[2])
+        msg.distance = float(fields[3])
+        msg.rssi = float(fields[4])
+        msg.nsd = float(fields[5])
+        self.transducer_pub.publish(msg)
 
     def _handle_dead_reckoning_report(self, fields: list[str]):
         """

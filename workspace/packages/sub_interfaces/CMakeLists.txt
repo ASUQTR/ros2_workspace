@@ -17,6 +17,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/LedCommand.msg"
   "msg/ControlTarget.msg"
   "msg/PlaybackStatus.msg"
+  "msg/DvlBeam.msg"
   "srv/PlaybackCommand.srv"
   "srv/PlaybackPath.srv"
   "srv/PlaybackRecording.srv"
