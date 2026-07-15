@@ -97,3 +97,6 @@ control_node:
       max_thruster_force_newton: 10.0
       joystick_curve: 1.2
       gamepad_timeout_sec: 0.35
+      # If true, OPEN_LOOP keeps surge/sway/yaw direct but lets the LQR own
+      # the vertical thrusters whenever depth_limits_enabled is checked.
+      depth_hold_with_limits_enabled: true

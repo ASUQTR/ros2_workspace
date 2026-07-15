@@ -9,7 +9,7 @@ playback_node:
     keyframe_depth_m: 0.10
     keyframe_max_interval_sec: 2.0
     position_tolerance: 0.15
-    depth_tolerance: 0.10
+    depth_tolerance: 0.30
     angle_tolerance_deg: 10.0
     waypoint_timeout_sec: 8.0
     min_waypoint_hold_sec: 0.2
@@ -17,5 +17,10 @@ playback_node:
     lookahead_distance_m: 0.35
     path_completion_tolerance_m: 0.25
     odometry_timeout_sec: 0.75
+    arm_control_before_play: true
+    control_arm_delay_sec: 2.0
+    control_arm_timeout_sec: 5.0
+    status_publish_period_sec: 0.5
+    open_loop_time_scale: 2.0
     magnetic_play_enabled: true
     require_kill_switch_armed: true

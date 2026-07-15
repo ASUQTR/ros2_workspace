@@ -74,6 +74,8 @@ DEFAULT_MANUAL_ASSISTED_FORWARD_AXIS_SIGN = 1.0
 DEFAULT_OPEN_LOOP_MAX_THRUSTER_FORCE = 10.0
 DEFAULT_OPEN_LOOP_JOYSTICK_CURVE = 1.2
 DEFAULT_OPEN_LOOP_GAMEPAD_TIMEOUT = 0.35
+DEFAULT_OPEN_LOOP_DEPTH_HOLD_WITH_LIMITS = True
+OPEN_LOOP_DEPTH_HOLD_THRUSTER_INDICES = (2, 3, 4, 5)
 
 # ==========================================
 # ENUMS
@@ -158,6 +160,7 @@ class ControlNode(Node):
         self.declare_parameter('open_loop.max_thruster_force_newton', DEFAULT_OPEN_LOOP_MAX_THRUSTER_FORCE)
         self.declare_parameter('open_loop.joystick_curve', DEFAULT_OPEN_LOOP_JOYSTICK_CURVE)
         self.declare_parameter('open_loop.gamepad_timeout_sec', DEFAULT_OPEN_LOOP_GAMEPAD_TIMEOUT)
+        self.declare_parameter('open_loop.depth_hold_with_limits_enabled', DEFAULT_OPEN_LOOP_DEPTH_HOLD_WITH_LIMITS)
 
         # PERFORMANCE ARCHITECTURE: Pre-allocate State Arrays
         # Initializing with NaN ensures the LQR math functions won't 
@@ -199,6 +202,7 @@ class ControlNode(Node):
         self.open_loop_max_thruster_force = DEFAULT_OPEN_LOOP_MAX_THRUSTER_FORCE
         self.open_loop_joystick_curve = DEFAULT_OPEN_LOOP_JOYSTICK_CURVE
         self.open_loop_gamepad_timeout = DEFAULT_OPEN_LOOP_GAMEPAD_TIMEOUT
+        self.open_loop_depth_hold_with_limits_enabled = DEFAULT_OPEN_LOOP_DEPTH_HOLD_WITH_LIMITS
         self.open_loop_last_gamepad_time = None
         self.software_kill_active = False
         self._last_mode_for_transition = None
@@ -245,6 +249,9 @@ class ControlNode(Node):
         self.open_loop_max_thruster_force = float(self.get_parameter('open_loop.max_thruster_force_newton').value)
         self.open_loop_joystick_curve = float(self.get_parameter('open_loop.joystick_curve').value)
         self.open_loop_gamepad_timeout = float(self.get_parameter('open_loop.gamepad_timeout_sec').value)
+        self.open_loop_depth_hold_with_limits_enabled = bool(
+            self.get_parameter('open_loop.depth_hold_with_limits_enabled').value
+        )
         self.manual_assisted_depth_target = self.manual_assisted_default_depth_target
         if self.manual_assisted_depth_limits_enabled:
             self.manual_assisted_depth_target = self._clamp(
@@ -1099,6 +1106,7 @@ class ControlNode(Node):
             -self.open_loop_max_thruster_force,
             self.open_loop_max_thruster_force
         )
+        efforts = self._apply_open_loop_depth_hold(efforts)
         self.thruster_pub.publish(ThrusterCommand(efforts=efforts.tolist()))
 
         dbg = Float64MultiArray()
@@ -1300,6 +1308,69 @@ class ControlNode(Node):
             return False
         return True
 
+    def _compute_lqr_thruster_force_for_target(self, target_state):
+        """Compute bounded, signed LQR thruster forces for a target state."""
+        lqr_error = self.current_state - target_state
+        lqr_error[3:6] = self.wrap_angles_to_pi(lqr_error[3:6])
+
+        thrusters_force = self.lqr_solver.compute_thrust_force(
+            self.current_state, lqr_error, self.q_matrix, self.r_matrix, self.inv_r_matrix
+        )
+        thrusters_force = np.clip(
+            thrusters_force,
+            -self.max_thruster_force_newton,
+            self.max_thruster_force_newton
+        )
+        return thrusters_force * self.thruster_force_signs
+
+    def _open_loop_depth_hold_active(self):
+        return (
+            self.open_loop_depth_hold_with_limits_enabled
+            and self.manual_assisted_depth_limits_enabled
+        )
+
+    def _initialize_open_loop_depth_hold_target(self):
+        if np.isnan(self.current_state[0]):
+            self.manual_assisted_base_depth_target = self.manual_assisted_default_depth_target
+        else:
+            self.manual_assisted_base_depth_target = float(self.current_state[2])
+        if self.manual_assisted_depth_limits_enabled:
+            self.manual_assisted_base_depth_target = self._clamp(
+                self.manual_assisted_base_depth_target,
+                self.manual_assisted_min_depth_target,
+                self.manual_assisted_max_depth_target
+            )
+        self.manual_assisted_depth_target = self.manual_assisted_base_depth_target
+
+    def _update_open_loop_depth_target(self, depth_offset_cmd):
+        self.manual_assisted_depth_target = (
+            self.manual_assisted_base_depth_target
+            + depth_offset_cmd * self.manual_assisted_max_depth_offset
+        )
+        if self.manual_assisted_depth_limits_enabled:
+            self.manual_assisted_depth_target = self._clamp(
+                self.manual_assisted_depth_target,
+                self.manual_assisted_min_depth_target,
+                self.manual_assisted_max_depth_target
+            )
+
+    def _apply_open_loop_depth_hold(self, efforts):
+        """Replace vertical open-loop thrusters with LQR depth/level hold."""
+        if not self._open_loop_depth_hold_active() or np.isnan(self.current_state[0]):
+            return efforts
+
+        target = self.current_state.copy()
+        target[2] = self.manual_assisted_depth_target
+        target[3] = 0.0
+        target[4] = 0.0
+        target[6:12] = 0.0
+
+        lqr_efforts = self._compute_lqr_thruster_force_for_target(target)
+        mixed = efforts.copy()
+        for index in OPEN_LOOP_DEPTH_HOLD_THRUSTER_INDICES:
+            mixed[index] = lqr_efforts[index]
+        return mixed
+
     def _set_manual_assisted_parameter(self, param):
         """Update one manual assisted tuning parameter at runtime."""
         if param.name == 'manual_assisted.depth_limits_enabled':
@@ -1457,6 +1528,14 @@ class ControlNode(Node):
 
     def _set_open_loop_parameter(self, param):
         """Update one open-loop diagnostic parameter at runtime."""
+        if param.name == 'open_loop.depth_hold_with_limits_enabled':
+            self.open_loop_depth_hold_with_limits_enabled = bool(param.value)
+            self.get_logger().warn(
+                f"OPEN_LOOP depth hold with depth limits "
+                f"{'enabled' if self.open_loop_depth_hold_with_limits_enabled else 'disabled'}."
+            )
+            return SetParametersResult(successful=True)
+
         try:
             value = float(param.value)
         except (TypeError, ValueError):
@@ -1481,6 +1560,9 @@ class ControlNode(Node):
 
     def _validate_open_loop_parameter(self, param):
         """Validate one open-loop diagnostic value without changing controller state."""
+        if param.name == 'open_loop.depth_hold_with_limits_enabled':
+            return SetParametersResult(successful=True)
+
         try:
             value = float(param.value)
         except (TypeError, ValueError):
@@ -1769,6 +1851,11 @@ class ControlNode(Node):
     ):
         """Convert gamepad intent directly into bounded thruster forces."""
         self.open_loop_last_gamepad_time = self._now_seconds()
+        depth_offset_cmd = self._shape_joystick(-heave_cmd)
+        if self._open_loop_depth_hold_active():
+            self._update_open_loop_depth_target(depth_offset_cmd)
+            heave_cmd = 0.0
+
         shaped_cmd = np.array([
             self._shape_open_loop_joystick(surge_cmd),
             self._shape_open_loop_joystick(sway_cmd),
@@ -1785,6 +1872,7 @@ class ControlNode(Node):
             self.open_loop_max_thruster_force
         )
         thrusters_force = thrusters_force * self.thruster_force_signs
+        thrusters_force = self._apply_open_loop_depth_hold(thrusters_force)
 
         self.thruster_pub.publish(ThrusterCommand(efforts=thrusters_force.tolist()))
 
@@ -1874,6 +1962,8 @@ class ControlNode(Node):
         if mode_switch_button and not self.last_mode_switch_button_state:
             if self._current_mode == ControlMode.OPEN_LOOP:
                 self.open_loop_last_gamepad_time = self._now_seconds()
+                if self._open_loop_depth_hold_active():
+                    self._initialize_open_loop_depth_hold_target()
                 self._clear_software_kill()
                 self.get_logger().warn(
                     f"OPEN_LOOP armed: direct thruster force mode, "

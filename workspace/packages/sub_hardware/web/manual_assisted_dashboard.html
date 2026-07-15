@@ -961,6 +961,15 @@
             <label for="playbackPath">Trajet JSON</label>
             <input id="playbackPath" type="text" value="/tmp/waypoints_latest.json" spellcheck="false">
           </div>
+          <div class="field">
+            <label for="playDelaySec">Délai Play</label>
+            <select id="playDelaySec">
+              <option value="0">Maintenant</option>
+              <option value="15">15 s</option>
+              <option value="30">30 s</option>
+              <option value="60">60 s</option>
+            </select>
+          </div>
           <div class="button-row three">
             <button id="loadPlaybackBtn" class="ghost" type="button">Load</button>
             <button id="playPlaybackBtn" class="primary" type="button">Play</button>
@@ -1354,10 +1363,14 @@
     };
     const unityCameraTimeoutMs = 2000;
     const publishPeriodMs = 50;
+    const uiPeriodMs = 250;
+    const chartPeriodMs = 200;
     const storageKey = "asuqtr.dashboard.settings";
 
     let ws = null;
     let publishTimer = null;
+    let uiTimer = null;
+    let chartTimer = null;
     let publishCount = 0;
     let lastPublishCount = 0;
     let lastJoy = null;
@@ -1373,6 +1386,8 @@
     let playbackProgressionMode = "setpoint";
     let playbackType = "assisted_target";
     let playbackActive = false;
+    let playDelayTimer = null;
+    let playDelayEndsAt = 0;
     let controlStopped = true;
     let disablePwmReceived = false;
     let killSwitchArmed = null;
@@ -1388,6 +1403,7 @@
     let physicalCameraBase = "";
     let lastChartOdomAt = 0;
     let chartCaptureEnabled = false;
+    let chartsDirty = false;
     const lastUnityFrameAt = { 1: 0, 2: 0 };
     const cameraSource = { 1: "offline", 2: "offline" };
     const telemetry = {
@@ -1425,6 +1441,7 @@
       cameraHint: document.getElementById("cameraHint"),
       recordBtn: document.getElementById("recordBtn"),
       playbackPath: document.getElementById("playbackPath"),
+      playDelaySec: document.getElementById("playDelaySec"),
       loadPlaybackBtn: document.getElementById("loadPlaybackBtn"),
       playPlaybackBtn: document.getElementById("playPlaybackBtn"),
       stopPlaybackBtn: document.getElementById("stopPlaybackBtn"),
@@ -1500,6 +1517,7 @@
     const rLabels = ["Thruster 1", "Thruster 2", "Thruster 3", "Thruster 4", "Thruster 5", "Thruster 6", "Thruster 7", "Thruster 8"];
     const qInputs = [];
     const rInputs = [];
+    let matrixInputsDirty = false;
     const thrusterDebugValues = [];
     const chartWindowMs = 180000;
     const chartSamples = {
@@ -1520,6 +1538,10 @@
         input.min = "0";
         input.step = "0.0001";
         input.dataset.matrixIndex = String(index);
+        input.addEventListener("input", () => {
+          matrixInputsDirty = true;
+          el.controlSettingsStatus.textContent = "Q/R modifiées localement";
+        });
         field.append(fieldLabel, input);
         container.appendChild(field);
         inputs.push(input);
@@ -1592,6 +1614,7 @@
         if (settings.rosbridgeUrl) el.rosbridgeUrl.value = settings.rosbridgeUrl;
         if (settings.cameraUrl) el.cameraUrl.value = settings.cameraUrl;
         if (settings.playbackPath) el.playbackPath.value = settings.playbackPath;
+        if (settings.playDelaySec) el.playDelaySec.value = settings.playDelaySec;
         if (settings.playbackReferenceMode) playbackReferenceMode = settings.playbackReferenceMode;
         if (settings.playbackProgressionMode) playbackProgressionMode = settings.playbackProgressionMode;
       } catch (error) {
@@ -1605,6 +1628,7 @@
         rosbridgeUrl: el.rosbridgeUrl.value.trim(),
         cameraUrl: el.cameraUrl.value.trim(),
         playbackPath: el.playbackPath.value.trim(),
+        playDelaySec: el.playDelaySec.value,
         playbackReferenceMode,
         playbackProgressionMode
       };
@@ -2078,10 +2102,11 @@
       el.controlSettingsStatus.textContent = failed ? "Erreur paramètres playback" : "Tolérances appliquées";
     }
 
-    function requestControlParameters() {
+    function requestControlParameters(refreshMatrices = true) {
+      const matrixMode = refreshMatrices ? "with-matrices" : "status-only";
       send({
         op: "call_service",
-        id: "control-settings-get-" + Date.now(),
+        id: "control-settings-get-" + matrixMode + "-" + Date.now(),
         service: "/control_node/get_parameters",
         type: "rcl_interfaces/srv/GetParameters",
         args: {
@@ -2103,8 +2128,14 @@
       if (!values || values.length < 6) return;
       const qValues = values[0].double_array_value || [];
       const rValues = values[1].double_array_value || [];
-      qInputs.forEach((input, index) => { input.value = Number(qValues[index] || 0).toFixed(4); });
-      rInputs.forEach((input, index) => { input.value = Number(rValues[index] || 0).toFixed(4); });
+      const matrixInputs = qInputs.concat(rInputs);
+      const matrixInputFocused = matrixInputs.includes(document.activeElement);
+      const shouldRefreshMatrices = String(response.id || "").includes("with-matrices");
+      if (shouldRefreshMatrices && (!matrixInputsDirty || !matrixInputFocused)) {
+        qInputs.forEach((input, index) => { input.value = Number(qValues[index] || 0).toFixed(4); });
+        rInputs.forEach((input, index) => { input.value = Number(rValues[index] || 0).toFixed(4); });
+        matrixInputsDirty = false;
+      }
       const profile = values[2].string_value || "standstill";
       el.profileTransitionSec.value = Number(values[3].double_value || 0).toFixed(1);
       updateProfileButtons(profile);
@@ -2118,7 +2149,9 @@
           el.modeMetric.textContent = actualMode || "-";
         }
       }
-      el.controlSettingsStatus.textContent = "Paramètres synchronisés";
+      if (!matrixInputsDirty) {
+        el.controlSettingsStatus.textContent = shouldRefreshMatrices ? "Paramètres synchronisés" : "État synchronisé";
+      }
     }
 
     function applyMatrices() {
@@ -2150,7 +2183,10 @@
       const result = response.values && response.values.result;
       const failed = !result || !result.successful;
       el.controlSettingsStatus.textContent = failed ? "Q/R refusées" : "Q/R appliquées";
-      if (!failed) requestControlParameters();
+      if (!failed) {
+        matrixInputsDirty = false;
+        requestControlParameters(true);
+      }
     }
 
     function selectProfile(profile) {
@@ -2522,10 +2558,18 @@
     }
 
     function updatePlaybackButtons() {
-      el.loadPlaybackBtn.disabled = playbackRequestPending;
-      el.playPlaybackBtn.disabled = playbackRequestPending;
+      const playDelayActive = playDelayTimer !== null;
+      el.loadPlaybackBtn.disabled = playbackRequestPending || playDelayActive;
+      el.playPlaybackBtn.disabled = playbackRequestPending || playDelayActive;
       el.stopPlaybackBtn.disabled = playbackRequestPending;
-      el.playbackMetric.textContent = playbackRequestPending ? "En attente" : playbackStatus;
+      if (playDelayActive) {
+        const remaining = Math.max(0, Math.ceil((playDelayEndsAt - Date.now()) / 1000));
+        el.playbackMetric.textContent = "Play dans " + remaining + " s";
+        el.playPlaybackBtn.textContent = "Play " + remaining + " s";
+      } else {
+        el.playPlaybackBtn.textContent = "Play";
+        el.playbackMetric.textContent = playbackRequestPending ? "En attente" : playbackStatus;
+      }
       updateControlLocks();
     }
 
@@ -2679,7 +2723,7 @@
           abs: Math.max(...effortValues.map((value) => Math.abs(value)))
         });
       }
-      drawAllCharts();
+      chartsDirty = true;
     }
 
     function drawAllCharts() {
@@ -3010,7 +3054,52 @@
       el.applyMatricesBtn.disabled = !controlStopped;
     }
 
+    function cancelPlayDelay() {
+      if (playDelayTimer === null) return false;
+      clearInterval(playDelayTimer);
+      playDelayTimer = null;
+      playDelayEndsAt = 0;
+      playbackStatus = "Play annulé";
+      addEvent("warn", "playback", "Départ différé annulé");
+      updatePlaybackButtons();
+      return true;
+    }
+
+    function scheduleDelayedPlay() {
+      const delaySec = Math.max(0, Number(el.playDelaySec.value || 0));
+      if (delaySec <= 0) return false;
+      saveSettings();
+      playDelayEndsAt = Date.now() + delaySec * 1000;
+      playbackStatus = "Play dans " + delaySec + " s";
+      addEvent("warn", "playback", "Départ différé: " + delaySec + " s");
+      updatePlaybackButtons();
+      playDelayTimer = setInterval(() => {
+        const remaining = playDelayEndsAt - Date.now();
+        if (remaining > 0) {
+          updatePlaybackButtons();
+          return;
+        }
+        clearInterval(playDelayTimer);
+        playDelayTimer = null;
+        playDelayEndsAt = 0;
+        addEvent("ok", "playback", "Départ différé terminé, envoi Play");
+        sendPlaybackCommandNow("play");
+      }, 250);
+      updatePlaybackButtons();
+      return true;
+    }
+
     function sendPlaybackCommand(command) {
+      if (command === "stop") {
+        cancelPlayDelay();
+      }
+      if (command === "play" && scheduleDelayedPlay()) {
+        return;
+      }
+      sendPlaybackCommandNow(command);
+    }
+
+    function sendPlaybackCommandNow(command) {
       if (playbackRequestPending) return;
       saveSettings();
       const filePath = el.playbackPath.value.trim();
@@ -3069,13 +3158,22 @@
       }, null, 2);
     }
 
-    function loop() {
+    function publishGamepadLoop() {
       const joy = readGamepad();
       if (joy) {
         publishJoy(joy);
       }
+    }
+
+    function uiLoop() {
       updateTelemetryDebug();
       updateDebug();
+    }
+
+    function chartLoop() {
+      if (!chartsDirty) return;
+      chartsDirty = false;
+      drawAllCharts();
     }
 
     function updatePublishRate() {
@@ -3113,7 +3211,10 @@
     document.getElementById("progressionSetpointBtn").addEventListener("click", () => setPlaybackProgression("setpoint"));
     document.getElementById("progressionTimestampBtn").addEventListener("click", () => setPlaybackProgression("timestamp"));
     document.getElementById("applyPlaybackSettingsBtn").addEventListener("click", applyPlaybackSettings);
-    document.getElementById("reloadMatricesBtn").addEventListener("click", requestControlParameters);
+    document.getElementById("reloadMatricesBtn").addEventListener("click", () => {
+      matrixInputsDirty = false;
+      requestControlParameters(true);
+    });
     document.getElementById("applyMatricesBtn").addEventListener("click", applyMatrices);
     document.getElementById("profileStandstillBtn").addEventListener("click", () => selectProfile("standstill"));
     document.getElementById("profileForwardBtn").addEventListener("click", () => selectProfile("forward"));
@@ -3171,12 +3272,14 @@
     resetInputs();
     drawAllCharts();
     addEvent("info", "dashboard", "Dashboard prêt");
-    publishTimer = setInterval(loop, publishPeriodMs);
+    publishTimer = setInterval(publishGamepadLoop, publishPeriodMs);
+    uiTimer = setInterval(uiLoop, uiPeriodMs);
+    chartTimer = setInterval(chartLoop, chartPeriodMs);
     setInterval(updatePublishRate, 1000);
     setInterval(updateTopicRates, 1000);
     setInterval(updateCameraSources, 500);
     setInterval(() => {
-      if (ws && ws.readyState === WebSocket.OPEN) requestControlParameters();
+      if (ws && ws.readyState === WebSocket.OPEN) requestControlParameters(false);
     }, 1500);
     updatePlaybackButtons();
     updateDebug();

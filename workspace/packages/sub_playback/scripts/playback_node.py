@@ -15,6 +15,7 @@ from rclpy.parameter import Parameter
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from rcl_interfaces.msg import ParameterEvent, SetParametersResult
 from rcl_interfaces.srv import SetParameters
+from sensor_msgs.msg import Joy
 from std_msgs.msg import Bool
 
 from sub_interfaces.msg import ControlTarget, PlaybackStatus, ThrusterCommand
@@ -49,7 +50,7 @@ class PlaybackNode(Node):
             self.declare_parameter('position_tolerance', 0.15).value
         )
         self.depth_tolerance = float(
-            self.declare_parameter('depth_tolerance', 0.10).value
+            self.declare_parameter('depth_tolerance', 0.30).value
         )
         self.angle_tolerance = math.radians(float(
             self.declare_parameter('angle_tolerance_deg', 10.0).value
@@ -71,6 +72,21 @@ class PlaybackNode(Node):
         )
         self.odometry_timeout = float(
             self.declare_parameter('odometry_timeout_sec', 0.75).value
+        )
+        self.arm_control_before_play = bool(
+            self.declare_parameter('arm_control_before_play', True).value
+        )
+        self.control_arm_delay = float(
+            self.declare_parameter('control_arm_delay_sec', 2.0).value
+        )
+        self.control_arm_timeout = float(
+            self.declare_parameter('control_arm_timeout_sec', 5.0).value
+        )
+        self.status_publish_period = float(
+            self.declare_parameter('status_publish_period_sec', 0.5).value
+        )
+        self.open_loop_time_scale = float(
+            self.declare_parameter('open_loop_time_scale', 2.0).value
         )
         self.magnetic_play_enabled = bool(
             self.declare_parameter('magnetic_play_enabled', True).value
@@ -113,6 +129,11 @@ class PlaybackNode(Node):
         self.playback_started_at = None
         self.active_waypoint_started_at = None
         self.last_target_publish_at = None
+        self.pending_playback_start = False
+        self.pending_playback_loop = False
+        self.pending_playback_started_at = None
+        self.last_control_arm_request_at = None
+        self.last_status_publish_at = None
         self.playback_index = 0
         self.resolved_target = None
         self.playback_targets = []
@@ -175,6 +196,9 @@ class PlaybackNode(Node):
             sensor_qos,
             callback_group=self.record_cb_group
         )
+        self.gamepad_pub = self.create_publisher(
+            Joy, 'dashboard/gamepad', sensor_qos
+        )
         self.control_stop_subscription = self.create_subscription(
             Bool, 'disable_pwm', self.control_stop_callback, latched_qos
         )
@@ -212,7 +236,11 @@ class PlaybackNode(Node):
                 'target_republish_period_sec',
                 'lookahead_distance_m',
                 'path_completion_tolerance_m',
-                'odometry_timeout_sec'
+                'odometry_timeout_sec',
+                'control_arm_delay_sec',
+                'control_arm_timeout_sec',
+                'status_publish_period_sec',
+                'open_loop_time_scale'
             ):
                 if param.type_ != Parameter.Type.DOUBLE or float(param.value) <= 0.0:
                     return SetParametersResult(
@@ -220,6 +248,8 @@ class PlaybackNode(Node):
                         reason=f'{param.name} must be a positive float'
                     )
                 updates[param.name] = float(param.value)
+            elif param.name == 'arm_control_before_play':
+                updates[param.name] = bool(param.value)
             elif param.name == 'magnetic_play_enabled':
                 updates[param.name] = bool(param.value)
             elif param.name == 'require_kill_switch_armed':
@@ -257,6 +287,16 @@ class PlaybackNode(Node):
                 self.path_completion_tolerance = value
             elif name == 'odometry_timeout_sec':
                 self.odometry_timeout = value
+            elif name == 'arm_control_before_play':
+                self.arm_control_before_play = value
+            elif name == 'control_arm_delay_sec':
+                self.control_arm_delay = value
+            elif name == 'control_arm_timeout_sec':
+                self.control_arm_timeout = value
+            elif name == 'status_publish_period_sec':
+                self.status_publish_period = value
+            elif name == 'open_loop_time_scale':
+                self.open_loop_time_scale = value
             elif name == 'magnetic_play_enabled':
                 self.magnetic_play_enabled = value
             elif name == 'require_kill_switch_armed':
@@ -526,8 +566,9 @@ class PlaybackNode(Node):
                 success, message = self.load_playback_file(requested_path)
                 if not success:
                     return self.command_response(response, success, message)
-            success, message = self.start_playback(request.loop)
+            success, message = self.begin_playback_sequence(request.loop)
         elif command == 'stop':
+            self.cancel_pending_playback_start()
             self.stop_playback('stopped')
             success, message = True, 'Playback stopped'
         else:
@@ -544,9 +585,25 @@ class PlaybackNode(Node):
         clean_path = file_path.strip()
         if not clean_path:
             return False, 'No JSON file path provided'
+        requested_path = Path(clean_path).expanduser()
+        candidate_paths = [requested_path]
+        fallback_path = Path(self.recording_output_dir).expanduser() / requested_path.name
+        if fallback_path not in candidate_paths:
+            candidate_paths.append(fallback_path)
+        payload = None
+        loaded_path = None
+        last_error = None
         try:
-            with open(clean_path, 'r') as source:
-                payload = json.load(source)
+            for candidate in candidate_paths:
+                try:
+                    with open(candidate, 'r') as source:
+                        payload = json.load(source)
+                    loaded_path = candidate
+                    break
+                except Exception as exc:
+                    last_error = exc
+            if payload is None or loaded_path is None:
+                return False, f'Failed to read {clean_path}: {last_error}'
         except Exception as exc:
             return False, f'Failed to read {clean_path}: {exc}'
 
@@ -562,11 +619,11 @@ class PlaybackNode(Node):
             self.loaded_waypoints = []
             return False, f'Invalid playback waypoint: {exc}'
 
-        self.loaded_file_path = clean_path
+        self.loaded_file_path = str(loaded_path)
         self.playback_targets = []
         self.playback_path_distances = []
         self.stop_playback('loaded')
-        message = f'Loaded {len(self.loaded_waypoints)} waypoint(s) from {clean_path}'
+        message = f'Loaded {len(self.loaded_waypoints)} waypoint(s) from {loaded_path}'
         self.get_logger().info(message)
         return True, message
 
@@ -641,6 +698,109 @@ class PlaybackNode(Node):
             return 'standstill'
         return profile
 
+    def begin_playback_sequence(self, loop=False):
+        """Optionally arm MANUAL_ASSISTED before starting playback."""
+        if not self.loaded_waypoints:
+            return False, 'No playback file loaded'
+        if self.require_kill_switch_armed and not self.kill_switch_armed:
+            return False, 'Cannot start playback: physical kill switch is not armed'
+        if self.playback_type != 'open_loop' and not self.odometry_is_fresh():
+            return False, 'Cannot start playback: odometry is unavailable or stale'
+        if self.playback_type == 'open_loop':
+            if not self.recording_has_thruster_efforts():
+                return False, 'Cannot start open-loop playback: JSON has no thruster_efforts'
+            return self.start_playback(loop)
+        if not self.arm_control_before_play:
+            return self.start_playback(loop)
+        if self.is_playing:
+            return False, 'Playback is already playing'
+        if self.pending_playback_start:
+            return True, 'Playback start sequence already pending'
+
+        self.pending_playback_start = True
+        self.pending_playback_loop = bool(loop)
+        self.pending_playback_started_at = self.get_clock().now()
+        self.last_control_arm_request_at = None
+        self.last_error = ''
+        self.last_timed_out = False
+        self.request_manual_assisted_arm()
+        self.publish_status('arming_control')
+        return True, (
+            f'Arming MANUAL_ASSISTED; playback will start after '
+            f'{self.control_arm_delay:.1f} s'
+        )
+
+    def cancel_pending_playback_start(self):
+        self.pending_playback_start = False
+        self.pending_playback_loop = False
+        self.pending_playback_started_at = None
+        self.last_control_arm_request_at = None
+
+    def request_manual_assisted_arm(self):
+        now = self.get_clock().now()
+        if (
+            self.last_control_arm_request_at is not None
+            and (now - self.last_control_arm_request_at).nanoseconds / 1e9 < 0.5
+        ):
+            return
+        self.last_control_arm_request_at = now
+
+        if self.control_parameter_client.service_is_ready():
+            request = SetParameters.Request()
+            request.parameters = [
+                Parameter('control_mode', value='manual_assisted').to_parameter_msg()
+            ]
+            self.control_parameter_client.call_async(request)
+        else:
+            self.get_logger().warn(
+                'Cannot request MANUAL_ASSISTED: control_node parameter service is not ready.',
+                throttle_duration_sec=2.0
+            )
+
+        self.publish_start_button(True)
+        self.publish_start_button(False)
+
+    def publish_start_button(self, pressed):
+        msg = Joy()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.axes = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0]
+        msg.buttons = [0] * 12
+        msg.buttons[7] = 1 if pressed else 0
+        self.gamepad_pub.publish(msg)
+
+    def process_pending_playback_start(self):
+        if not self.pending_playback_start:
+            return
+        if self.pending_playback_started_at is None:
+            self.pending_playback_started_at = self.get_clock().now()
+
+        now = self.get_clock().now()
+        elapsed = (now - self.pending_playback_started_at).nanoseconds / 1e9
+        self.request_manual_assisted_arm()
+
+        if elapsed < self.control_arm_delay:
+            self.publish_periodic_status('arming_control')
+            return
+
+        if self.control_stopped:
+            if elapsed >= self.control_arm_timeout:
+                error = 'Control did not arm before playback timeout'
+                self.cancel_pending_playback_start()
+                self.last_error = error
+                self.publish_status('error')
+                self.get_logger().error(error)
+            else:
+                self.publish_periodic_status('waiting_lqr')
+            return
+
+        loop = self.pending_playback_loop
+        self.cancel_pending_playback_start()
+        success, message = self.start_playback(loop)
+        if not success:
+            self.last_error = message
+            self.publish_status('error')
+            self.get_logger().warn(message)
+
     def derive_legacy_body_delta(self, item, idx, all_items, current_yaw):
         if idx == 0:
             return 0.0, 0.0, 0.0
@@ -696,6 +856,7 @@ class PlaybackNode(Node):
         )
 
     def stop_playback(self, state='idle', error='', timed_out=False):
+        self.cancel_pending_playback_start()
         self.is_playing = False
         self.playback_started_at = None
         self.active_waypoint_started_at = None
@@ -712,6 +873,9 @@ class PlaybackNode(Node):
         self.publish_status(state)
 
     def playback_timer_callback(self):
+        if self.pending_playback_start:
+            self.process_pending_playback_start()
+            return
         if not self.is_playing:
             return
         if self.control_stopped:
@@ -727,6 +891,8 @@ class PlaybackNode(Node):
             self.timestamp_progression()
         else:
             self.setpoint_progression()
+        if self.is_playing:
+            self.publish_periodic_status('playing')
 
     def recording_has_thruster_efforts(self):
         return all(
@@ -735,7 +901,9 @@ class PlaybackNode(Node):
         )
 
     def open_loop_timestamp_progression(self):
-        elapsed = (self.get_clock().now() - self.playback_started_at).nanoseconds / 1e9
+        elapsed = (
+            (self.get_clock().now() - self.playback_started_at).nanoseconds / 1e9
+        ) / max(self.open_loop_time_scale, 1e-6)
         while (
             self.playback_index + 1 < len(self.loaded_waypoints)
             and elapsed >= self.loaded_waypoints[self.playback_index + 1]['time_from_start']
@@ -1138,9 +1306,9 @@ class PlaybackNode(Node):
         self.last_magnetic_switch_state = state
         if not rising_edge or not self.magnetic_play_enabled:
             return
-        if self.is_playing:
+        if self.is_playing or self.pending_playback_start:
             return
-        success, message = self.start_playback(False)
+        success, message = self.begin_playback_sequence(False)
         if not success:
             self.last_error = f'Magnetic play rejected: {message}'
             self.publish_status('error')
@@ -1151,6 +1319,14 @@ class PlaybackNode(Node):
             return False
         age = (self.get_clock().now() - self.last_odometry_at).nanoseconds / 1e9
         return age <= self.odometry_timeout
+
+    def publish_periodic_status(self, state):
+        now = self.get_clock().now()
+        if self.last_status_publish_at is not None:
+            age = (now - self.last_status_publish_at).nanoseconds / 1e9
+            if age < self.status_publish_period:
+                return
+        self.publish_status(state)
 
     def publish_status(self, state):
         msg = PlaybackStatus()
@@ -1164,6 +1340,7 @@ class PlaybackNode(Node):
         msg.error = self.last_error
         msg.timed_out = self.last_timed_out
         self.status_pub.publish(msg)
+        self.last_status_publish_at = self.get_clock().now()
 
     # Legacy indexed service
     def handle_playback_path(self, request, response):
