@@ -19,17 +19,16 @@ services:
       - /tmp/argus_socket:/tmp/argus_socket
       - /dev:/dev
       - ../../workspace:/workspace
-      - ../../workspace/packages:/workspace/src
 
   # ==========================================
   # 2. ASUQTR DASHBOARD
   # ==========================================
-  asuqtr-dashboard:
-    # TODO add docker repository prefix to image when repository server available
-    image: asuqtr-dashboard:latest
-    container_name: asuqtr-dashboard
-    ports:
-        - "80:80"
+  # asuqtr-dashboard:
+  #   # TODO add docker repository prefix to image when repository server available
+  #   image: asuqtr-dashboard:latest
+  #   container_name: asuqtr-dashboard
+  #   ports:
+  #       - "80:80"
 
   # ==========================================
   # 3. ASUQTR VISION
