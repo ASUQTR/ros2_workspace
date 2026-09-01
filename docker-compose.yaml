@@ -17,6 +17,8 @@ services:
       - /tmp/argus_socket:/tmp/argus_socket
       - /dev:/dev
       - ./:/workspace
+    # Start web server for FlexBE webui on port 8000
+    command: ros2 run flexbe_webui webui_node --host 0.0.0.0 --port 8000
 
   # ==========================================
   # 2. ASUQTR DASHBOARD
